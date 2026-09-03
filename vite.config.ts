@@ -7,6 +7,7 @@ const publicUrl = origin ? new URL(origin) : undefined;
 
 export default defineConfig({
   plugins: [react()],
+  worker: { format: "es" },
   server: {
     host: publicUrl ? "0.0.0.0" : "127.0.0.1",
     port: devPort,
@@ -16,7 +17,9 @@ export default defineConfig({
       ? {
           protocol: publicUrl.protocol === "https:" ? "wss" : "ws",
           host: publicUrl.hostname,
-          clientPort: Number(publicUrl.port || (publicUrl.protocol === "https:" ? 443 : 80)),
+          clientPort: Number(
+            publicUrl.port || (publicUrl.protocol === "https:" ? 443 : 80),
+          ),
         }
       : undefined,
     proxy: {
@@ -24,5 +27,8 @@ export default defineConfig({
       "/socket": { target: "ws://127.0.0.1:4738", ws: true },
     },
   },
-  build: { target: "es2022" },
+  build: {
+    target: "es2022",
+    rollupOptions: { input: { main: "index.html", explorer: "explorer.html" } },
+  },
 });

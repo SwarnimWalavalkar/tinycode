@@ -126,7 +126,9 @@ export class Runtime {
     if (this.closing) throw new Error("The server is shutting down");
     const provider = this.providers.find((p) => p.id === task.provider);
     if (!provider?.available)
-      throw new Error(`${adapters[task.provider].name} is not installed on the server`);
+      throw new Error(
+        `${adapters[task.provider].name} is not ready. Check its login on the server, then refresh harnesses.`,
+      );
     if (mode === "steer" && !provider.capabilities.steer)
       throw new Error("This harness does not support steering");
     const accepted = this.store.db.transaction(() => {

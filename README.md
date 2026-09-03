@@ -39,9 +39,20 @@ From this checkout, choose your package manager:
 
 Tinycode uses Node.js as its server runtime with all three package managers. Bun installs dependencies and runs the package scripts; Node.js must still be installed. The required dependency build scripts are already allowed for pnpm and Bun.
 
+When switching package managers in an existing checkout, remove the old `node_modules` first, then install with your chosen manager. npm can otherwise crash with `Cannot read properties of null (reading 'matches')` while reading another manager's dependency layout ([npm issue](https://github.com/npm/cli/issues/9459)). For example, switching to npm:
+
+```sh
+rm -rf node_modules
+npm install
+```
+
+Keep the repository's `pnpm-lock.yaml`; only the installed dependencies need replacing.
+
 Examples below use npm; you can substitute `pnpm run` or `bun run` for `npm run`.
 
-Open `http://127.0.0.1:4737` for development, or `http://127.0.0.1:4738` after building and starting the server. Choose a harness and model, and send a task. **New task** starts with **No project** selected. To work in an existing folder, add it with the **+** beside Projects, then select it in the composer or sidebar. The model selector reads the installed harness's catalog and also accepts explicit model IDs. Both selections remain visible during work. You can change models between turns in the same native conversation.
+Open `http://127.0.0.1:4737` for development, or `http://127.0.0.1:4738` after building and starting the server. Choose a harness and model, and send a task. **New task** starts with **No project** selected. To work in an existing folder, use the **+** beside Projects to browse the connected server’s folders or enter a path, then select the project in the composer or sidebar. The model selector reads the installed harness's catalog and also accepts explicit model IDs. Both selections remain visible during work. You can change models between turns in the same native conversation.
+
+The harness picker shows only installed harnesses with authentication configured. Tinycode asks Codex for its account state, Claude Code for its login status, and Pi for its credential-aware model catalog without sending a prompt. After signing in on the server, use **Refresh harnesses** in the picker. Checks do not verify remaining credits or guarantee a provider will accept a request.
 
 Tinycode uses each harness's existing authentication and settings. Your provider's usage limits and charges apply, including the small-model requests used for task names. Stop the server with Ctrl+C when you are done; this interrupts active turns and closes its terminals.
 
@@ -68,6 +79,12 @@ Open `http://127.0.0.1:4737`. Vite proxies to the server on port 4738 by default
 Click the connection status at the bottom of the sidebar to change the **Server URL**, optionally name the connection, and enter its access token. The default is the origin serving the UI, so both the local development proxy and production app work without configuration. **Use default** restores that address. With no custom name, loopback addresses show **Local workspace** and other servers show their hostname. A green dot means the server answered a live heartbeat; Tinycode checks every 15 seconds, gives each check five seconds to respond, and automatically reconnects after failures.
 
 The URL and name are saved in this browser. Tokens are scoped to the server and kept in this tab's session storage, surviving refresh but not closing the tab. Switching reloads the UI and clears unsent drafts; saved tasks and running work stay on their respective servers. Project and model preferences are also kept separately for each server.
+
+### Explorer test page
+
+Run `npm run dev:web` and open `http://127.0.0.1:4737/explorer.html` to try the shared file tree and code/diff viewer with sample data. No server, authenticated harness, or model calls are needed. The page includes modified, added, and deleted files, an editable preview, and a 2,500-file sample. Sample edits stay in memory until reset or reload.
+
+This page is a development test surface. In a task, the conversation remains the main view: open the file panel beside it, select a file or change, drag the divider for more room, or expand the panel temporarily. Restoring the sidebar keeps the current preview. Closing the preview returns to compact file navigation. Both layouts use the same explorer components.
 
 ## Remote machine
 
@@ -158,7 +175,7 @@ Configuration is read from the server process environment. Tinycode does not aut
 - Projectless tasks with separate persistent workspaces, alongside tasks in saved projects.
 - Small-model task naming and a right-click rename dialog with conversation-based suggestions. Naming uses separate ephemeral sessions and bounded user/assistant context.
 - One persistent shell per task, terminal resize, reconnect, and explicit process close. Hiding its panel leaves the shell alive.
-- Lazy file tree, text preview/editor, Git status and unified diffs.
+- A lazy, virtualized file tree powered by [Trees](https://trees.software/), plus highlighted file previews and unified/split Git diffs powered by [Diffs](https://diffs.com/). Both load on demand; syntax highlighting runs in a small worker pool. Text files can still be edited and saved explicitly.
 - A new Git worktree per task when requested, on a branch you name, based on the current `HEAD`.
 - Search, keyboard shortcuts, light/dark themes, and a compact responsive layout.
 

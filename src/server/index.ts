@@ -11,10 +11,10 @@ import { TaskTitles } from "./titles.js";
 import { Images, imageBody } from "./images.js";
 import { Terminals } from "./terminals.js";
 import { createTask } from "./tasks.js";
-import { adapters, probeProviders } from "./adapters/index.js";
-import { modelCatalog } from "./adapters/models.js";
+import { adapters, pendingProviders, probeProviders } from "./adapters/index.js";
+import { clearModelCatalogs, modelCatalog } from "./adapters/models.js";
 import { thinkingOptions } from "./adapters/thinking.js";
-import { diff, file, gitInfo, gitStatus, saveFile, tree } from "./workspace.js";
+import { browseDirectories, diff, file, gitInfo, gitStatus, saveFile, tree } from "./workspace.js";
 import {
   authenticated,
   sameOrigin,
@@ -50,7 +50,7 @@ const images = new Images(store, dataDir);
 await images.prune();
 const workspacesDir = join(dataDir, "workspaces");
 await mkdir(workspacesDir, { recursive: true });
-const providers = await probeProviders();
+const providers = pendingProviders();
 const peers = new Map<
   WebSocket,
   { taskId?: string; terminalId?: string; send: (p: ServerPacket) => void }
@@ -58,9 +58,31 @@ const peers = new Map<
 const publish = (packet: ServerPacket, taskId?: string) => {
   for (const peer of peers.values()) if (!taskId || peer.taskId === taskId) peer.send(packet);
 };
+let providerCheck: Promise<void> | undefined;
+let providersCheckedAt = 0;
+function refreshProviders(force = false): Promise<void> {
+  if (providerCheck) return providerCheck;
+  if (!force && Date.now() - providersCheckedAt < 30000) return Promise.resolve();
+  providerCheck = probeProviders(workspacesDir, (provider) => {
+    // A slow or unavailable harness must not hide others that are already ready.
+    providers[providers.findIndex((p) => p.id === provider.id)] = provider;
+    publish({ type: "providers", providers });
+  })
+    .then((next) => {
+      // Runtime and title generation share this array; preserve its identity.
+      providers.splice(0, providers.length, ...next);
+      providersCheckedAt = Date.now();
+      clearModelCatalogs();
+      publish({ type: "providers", providers });
+    })
+    .finally(() => {
+      providerCheck = undefined;
+    });
+  return providerCheck;
+}
 const titles = new TaskTitles(store, providers, publish);
 const runtime = new Runtime(store, providers, dataDir, publish, (id) => void titles.start(id));
-titles.recover();
+
 const terminals = new Terminals();
 const bootstrap = (): ServerPacket => ({
   type: "bootstrap",
@@ -168,9 +190,28 @@ const server = createServer(async (req, res) => {
       json(res, bootstrap());
       return;
     }
+    if (url.pathname === "/api/providers" && ["GET", "POST"].includes(req.method ?? "")) {
+      await refreshProviders(req.method === "POST");
+      json(res, providers);
+      return;
+    }
+    if (url.pathname === "/api/directories" && req.method === "GET") {
+      json(
+        res,
+        await browseDirectories(
+          string(url.searchParams.get("path") ?? "~"),
+          url.searchParams.get("hidden") === "true",
+        ),
+      );
+      return;
+    }
     if (["/api/models", "/api/thinking"].includes(url.pathname) && req.method === "GET") {
       const provider = providers.find((p) => p.id === url.searchParams.get("provider"));
       if (!provider) throw new Error("Unknown harness");
+      if (!provider.available)
+        throw new Error(
+          "This harness is not ready. Sign in on the server, then refresh harnesses.",
+        );
       const projectId = url.searchParams.get("projectId");
       const taskId = url.searchParams.get("taskId");
       const cwd = taskId
@@ -469,6 +510,7 @@ wss.on("connection", (ws) => {
 server.listen(port, host, () => {
   console.log(`Tinycode · http://${host}:${port} · ${dataDir}`);
   if (devOrigin) console.log(`Development URL · ${devOrigin}/`);
+  void refreshProviders().then(() => titles.recover());
 });
 function shutdown() {
   void titles.dispose();

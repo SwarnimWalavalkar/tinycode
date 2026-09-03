@@ -1,5 +1,22 @@
 # v0 validation
 
+## Shared explorer design and test page · September 3, 2026
+
+- The standalone `/explorer.html` uses the same Trees, code preview, and Diffs components as the task sidebar, with an in-memory sample workspace. It is a test surface; the main product keeps the conversation primary and offers a resizable side panel with temporary expansion.
+- Manual checks used the Browser plugin. The sample covered lazy folder expansion, synchronized file selection, edit/save, added/modified/deleted diffs, unified/split layout, wrapping, line numbers, backgrounds, indicators, and inline highlighting. The 2,500-file directory rendered 35 tree rows in the tested viewport.
+- A disposable production server with a seeded sample transcript and real Git workspace verified file and diff previews beside the conversation, keyboard resizing, expansion/restoration, contraction to a 300 px tree, and file/tree navigation at 430 px without horizontal overflow. The transcript was synthetic; no live harness prompts were sent in this pass. The temporary server was stopped after testing.
+- `pnpm run check` passed all 102 tests across 14 files; `pnpm run build` passed. The explorer and syntax-highlighting workers remain lazy in the main app. Vite still reports the large lazy preview chunk. No runtime browser errors occurred in the production check.
+
+## Harness readiness and workspace explorer · September 3, 2026
+
+- Native, prompt-free auth probes passed with Codex 0.147.0, Claude Code 2.1.251, and Pi 0.84.4 on macOS. Codex account state, Claude login status, and Pi's credential-aware catalog drive availability. Each ready harness is published independently; checks run outside the typing and message-send path. Provider credentials and auth responses are not sent to the browser.
+- `pnpm run check`: 102 tests across 14 files passed. New cases cover signed-out/authenticated/custom-provider states, native protocol use, refresh after login, unavailable Pi defaults, server folder navigation, symlinks, hidden folders, workspace containment, and Diffs-compatible new/changed/deleted files.
+- `pnpm run build`: passed. The initial app JavaScript is 279.56 kB (89.23 kB gzip). Trees loads with the file panel; Diffs and its two-worker highlighting pool load with a preview. Browser request inspection confirmed the explorer and worker bundles are absent from the initial page load. Vite reports a large lazy preview chunk; it is not part of the initial app load.
+- `pnpm run test:smoke`: passed, including unauthenticated directory/provider endpoint rejection, authenticated server directory browsing, unavailable harness refresh, existing HTTP/WebSocket auth, real PTY, isolated workspaces, Git diffs, and image upload/preview checks.
+- Chromium browser checks against an isolated production server passed: ready-only harness tabs, signing out and signing back in through native test probes, project path entry during initial loading, hidden folders and parent navigation, folder expansion, file preview/edit/save/reopen, preserved expansion after saving, and unified/split/new-file diffs. Dark-theme screenshots were inspected. No browser errors or live model prompts were produced.
+- A subsequent live Chromium end-to-end check passed with Codex 0.147.0 and GPT-5.4 Mini in a disposable Git project: folder selection, model selection, composer submission, automatic task naming, native file editing, same-session follow-up, collapsed completed turns, Trees file preview, Diffs unified/split views, keyboard input through the real terminal, and transcript restoration after refresh. The model initially appended instead of replacing a line; a corrective follow-up produced the exact expected bytes, which were checked on disk and through the terminal. All three harnesses passed native auth discovery; live prompt execution in this check covered Codex only. No browser errors occurred. The temporary terminal and server were stopped after testing.
+
+
 ## Package manager support · September 3, 2026
 
 Clean installs with npm, pnpm, and Bun passed on macOS arm64 and Linux x64 using Node 24. The checks covered npm 11, pnpm 10/11, and Bun 1.4.0. Each manager passed the 88-test suite, production build, and HTTP/image smoke checks, including authenticated WebSockets, SQLite, a real PTY, files, and Git/worktrees. No model prompts were sent.

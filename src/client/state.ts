@@ -177,6 +177,7 @@ export function markTaskRead(taskId: string, attentionId: string) {
   });
 }
 function receive(p: ServerPacket) {
+  if (p.type === "providers") setShell({ providers: p.providers });
   if (p.type === "bootstrap")
     setShell({
       projects: p.projects,

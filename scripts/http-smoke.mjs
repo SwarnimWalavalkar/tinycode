@@ -60,6 +60,8 @@ try {
   });
   assert.equal((await fetch(base)).status, 200, "built UI is served by Node");
   assert.equal((await fetch(base + "/api/bootstrap")).status, 401);
+  assert.equal((await fetch(base + "/api/directories")).status, 401);
+  assert.equal((await fetch(base + "/api/providers")).status, 401);
   assert.equal(
     (
       await fetch(base + "/api/bootstrap", {
@@ -94,6 +96,11 @@ try {
     return data;
   };
   const free = await api("/tasks", { provider: "codex" });
+  const folders = await api(`/directories?path=${encodeURIComponent(fixture)}`, undefined, "GET");
+  assert.equal(folders.path, await realpath(fixture));
+  assert.deepEqual(folders.directories, [], "project browser lists directories, not files");
+  const providers = await api("/providers", {});
+  assert(providers.every((provider) => !provider.available && provider.readiness === "missing"));
   const claude = await api("/tasks", { projectId: null, provider: "claude" });
   const pi = await api("/tasks", { projectId: null, provider: "pi" });
   for (const task of [free, claude, pi]) {

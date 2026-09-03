@@ -16,6 +16,8 @@ export interface ProviderInfo {
   name: string;
   command: string;
   available: boolean;
+  /** Availability means installed and authenticated, not merely present on PATH. */
+  readiness?: "checking" | "ready" | "missing" | "unauthenticated" | "error";
   version?: string;
   capabilities: ProviderCapabilities;
 }
@@ -45,6 +47,26 @@ export interface Project {
   branch: string | null;
   isGit: boolean;
   createdAt: string;
+}
+
+export interface DirectoryListing {
+  path: string;
+  parent: string | null;
+  home: string;
+  directories: { name: string; path: string }[];
+  truncated: boolean;
+}
+
+export interface WorkspaceEntry {
+  name: string;
+  path: string;
+  type: "directory" | "symlink" | "file";
+}
+
+export interface WorkspaceDiff {
+  content: string;
+  /** Untracked text files do not have a native Git patch. */
+  newFile?: { name: string; contents: string };
 }
 
 export interface Task {
@@ -125,6 +147,7 @@ export interface QueuedMessage {
 
 export type ServerPacket =
   | { type: "pong"; id: number }
+  | { type: "providers"; providers: ProviderInfo[] }
   | { type: "bootstrap"; projects: Project[]; tasks: Task[]; providers: ProviderInfo[] }
   | { type: "tasks"; tasks: Task[] }
   | {
