@@ -19,12 +19,20 @@ const png = Buffer.from(
   "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+aFukAAAAASUVORK5CYII=",
   "base64",
 );
-const fixtures: { root: string; store: Store; runtime: Runtime }[] = [];
+const fixtures: { root: string; store: Store; runtime: Runtime; taskId: string }[] = [];
 const tick = () => new Promise<void>((resolve) => setImmediate(resolve));
+async function stop(runtime: Runtime, store: Store, taskId: string) {
+  runtime.dispose();
+  if (!store.db.open) return;
+  // Image reads can outlive a single event-loop tick. Wait for the runtime's
+  // persisted turn completion before closing the database it still uses.
+  await vi.waitFor(() =>
+    expect(store.timeline(taskId).turns.every((turn) => turn.status !== "running")).toBe(true),
+  );
+}
 afterEach(async () => {
   for (const f of fixtures.splice(0)) {
-    f.runtime.dispose();
-    await tick();
+    await stop(f.runtime, f.store, f.taskId);
     if (f.store.db.open) f.store.db.close();
     await rm(f.root, { recursive: true, force: true });
   }
@@ -69,7 +77,7 @@ async function fixture() {
       runs.forEach((run) => run.finish());
     },
   });
-  fixtures.push({ root, store, runtime });
+  fixtures.push({ root, store, runtime, taskId: task.id });
   const upload = () => images.save(randomUUID(), "Photo.png", "image/png", png);
   return { root, store, images, task, runtime, runs, steers, upload, provider };
 }
@@ -148,8 +156,7 @@ it("keeps queued and transcript images after restart and only removes unattached
   await runtime.send(task, "Second", "2", "queue", [second.id]);
   await images.remove(unused.id);
   expect(() => images.get(unused.id)).toThrow("not found");
-  runtime.dispose();
-  await tick();
+  await stop(runtime, store, task.id);
   store.db.close();
   const reopened = new Store(join(root, "state.db"));
   try {

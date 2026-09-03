@@ -10,7 +10,7 @@ The interface uses [SF Pro](https://developer.apple.com/fonts/) through Apple's 
 
 ## Run
 
-Requires Node 22.19+ (Node 24 recommended), pnpm 10.33.3, Git, and at least one installed, authenticated harness. macOS and Linux are the intended v0 platforms; native harness validation so far was performed on macOS. Windows is not yet supported.
+Requires Node 22.19+ (Node 24 recommended), Git, and at least one installed, authenticated harness. Use npm, pnpm 10.26+, or Bun as your package manager. macOS and Linux are the intended v0 platforms; native harness validation so far was performed on macOS. Windows is not yet supported.
 
 Install a harness and sign in using its own CLI on the machine that will run the Tinycode server:
 
@@ -20,7 +20,7 @@ Install a harness and sign in using its own CLI on the machine that will run the
 | Claude Code | [Official setup](https://code.claude.com/docs/en/overview)                                 | `claude`                   |
 | Pi          | [Coding agent setup](https://github.com/earendil-works/pi/tree/main/packages/coding-agent) | `pi`                       |
 
-Linux installs compile the terminal bindings from source, so Python 3, Make, and a C/C++ compiler are required. On Debian/Ubuntu, install them before running pnpm:
+Linux installs compile the terminal bindings from source, so Python 3, Make, and a C/C++ compiler are required. On Debian/Ubuntu, install them before installing dependencies:
 
 ```sh
 sudo apt-get update
@@ -29,19 +29,23 @@ sudo apt-get install -y python3 build-essential
 
 On macOS, install Xcode Command Line Tools if native bindings need to compile. Tinycode includes `node-gyp` as a build dependency; no global installation is needed. Do not skip dependency build scripts: the terminal and database require their native components.
 
-If pnpm is not installed, run `npm install --global pnpm@10.33.3`. From this checkout:
+From this checkout, choose your package manager:
 
-```sh
-pnpm install --frozen-lockfile
-pnpm build
-pnpm start
-```
+| Package manager | Install | Development | Build and run |
+| --- | --- | --- | --- |
+| npm | `npm install` | `npm run dev` | `npm run build && npm run start` |
+| pnpm | `pnpm install` | `pnpm run dev` | `pnpm run build && pnpm run start` |
+| Bun | `bun install` | `bun run dev` | `bun run build && bun run start` |
 
-Open `http://127.0.0.1:4738`, choose a harness and model, and send a task. **New task** starts with **No project** selected. To work in an existing folder, add it with the **+** beside Projects, then select it in the composer or sidebar. The model selector reads the installed harness's catalog and also accepts explicit model IDs. Both selections remain visible during work. You can change models between turns in the same native conversation.
+Tinycode uses Node.js as its server runtime with all three package managers. Bun installs dependencies and runs the package scripts; Node.js must still be installed. The required dependency build scripts are already allowed for pnpm and Bun.
+
+Examples below use npm; you can substitute `pnpm run` or `bun run` for `npm run`.
+
+Open `http://127.0.0.1:4737` for development, or `http://127.0.0.1:4738` after building and starting the server. Choose a harness and model, and send a task. **New task** starts with **No project** selected. To work in an existing folder, add it with the **+** beside Projects, then select it in the composer or sidebar. The model selector reads the installed harness's catalog and also accepts explicit model IDs. Both selections remain visible during work. You can change models between turns in the same native conversation.
 
 Tinycode uses each harness's existing authentication and settings. Your provider's usage limits and charges apply, including the small-model requests used for task names. Stop the server with Ctrl+C when you are done; this interrupts active turns and closes its terminals.
 
-If installation fails with only `ELIFECYCLE`, rerun `pnpm install --frozen-lockfile --reporter=append-only` to show the underlying dependency build error.
+If a native dependency fails to install, use your package manager's verbose output to see the underlying build error: `npm install --foreground-scripts`, `pnpm install --reporter=append-only`, or `bun install --verbose`.
 
 Projectless tasks appear under **Scratchpad** in the sidebar. Each has its own persistent folder at `$TINYCODE_DATA_DIR/workspaces/<task-id>` (under `~/.tinycode` by default), with the same file editor, terminal, harness, and resume support. No Git repository is created automatically. Files remain after closing the task or restarting Tinycode.
 
@@ -56,7 +60,7 @@ Uploads go to the Tinycode server, so attachments work with a remote server as w
 For development:
 
 ```sh
-pnpm dev
+npm run dev
 ```
 
 Open `http://127.0.0.1:4737`. Vite proxies to the server on port 4738 by default.
@@ -71,7 +75,7 @@ The smallest setup keeps the server bound to loopback and forwards its port:
 
 ```sh
 # On the development machine
-pnpm start
+npm run start
 
 # On your laptop
 ssh -L 4738:127.0.0.1:4738 your-server
@@ -86,7 +90,7 @@ export TINYCODE_HOST=0.0.0.0
 export TINYCODE_TOKEN="$(node -e 'console.log(require("crypto").randomBytes(32).toString("hex"))')"
 # If using a reverse proxy, set its browser-facing origin:
 export TINYCODE_ORIGIN=https://tinycode.example.com
-pnpm start
+npm run start
 ```
 
 Enter the token in the browser when prompted. Remote listeners refuse to start without a token of at least 24 characters. HTTP and WebSocket access require it. The token grants access to the server user's development environment; this is not a multi-user sandbox or a public hosting service. A reverse proxy must forward WebSocket upgrades and the `Sec-WebSocket-Protocol` request header.
@@ -96,12 +100,12 @@ Enter the token in the browser when prompted. Remote listeners refuse to start w
 For a development server behind a reverse proxy that already authenticates users, set the exact browser-facing origin:
 
 ```sh
-TINYCODE_DEV_ORIGIN=https://dev.example.com pnpm dev
+TINYCODE_DEV_ORIGIN=https://dev.example.com npm run dev
 ```
 
 This explicitly exposes Vite on `0.0.0.0:4737` and admits the configured hostname. Route that origin to port 4737, preserving the request Host and Origin headers and forwarding WebSocket upgrades. The UI, API, images, terminal, and hot reload share the same origin; the backend stays on `127.0.0.1:4738`. Custom public ports are supported. The development URL is printed at startup.
 
-With no Tinycode token, this mode delegates access control to your proxy. It must authenticate every request, including WebSocket connections, and prevent direct access to the listener. Use HTTPS for public access. Tinycode does not detect or trust any hosting provider automatically. Without this setting, development stays on loopback; `pnpm start` ignores it and retains the production access controls above.
+With no Tinycode token, this mode delegates access control to your proxy. It must authenticate every request, including WebSocket connections, and prevent direct access to the listener. Use HTTPS for public access. Tinycode does not detect or trust any hosting provider automatically. Without this setting, development stays on loopback; `npm run start` ignores it and retains the production access controls above.
 
 ### Local UI with a directly hosted remote server
 
@@ -110,11 +114,11 @@ Allow the local UI's exact origin on the remote server:
 ```sh
 # On the remote machine, alongside the host/token/origin settings above:
 export TINYCODE_ALLOWED_ORIGINS=http://127.0.0.1:4737
-pnpm start
+npm run start
 
 # On your laptop, from the Tinycode checkout:
-pnpm install --frozen-lockfile
-pnpm dev:web
+npm install
+npm run dev:web
 ```
 
 Open `http://127.0.0.1:4737`, click the sidebar's connection status, and enter `https://tinycode.example.com`, its token, and an optional name. The local UI can run without a local Tinycode backend. All API calls, live updates, terminals, and image uploads/previews use the selected remote server. Harnesses and credentials must be installed on that server.
@@ -187,9 +191,9 @@ Node server: tasks + SQLite + native process ownership + filesystem/Git
 `src/shared/contracts.ts` is the small wire contract. `src/server/adapters` contains only native integrations. `runtime.ts` owns task execution and coalesces display updates; the harness still owns every agent decision. `src/client/state.ts` keeps token updates scoped to individual rows. Terminal output bypasses React entirely.
 
 ```sh
-pnpm check
-pnpm build
-pnpm test:smoke
+npm run check
+npm run build
+npm run test:smoke
 ```
 
 See [validation](docs/validation.md) for the checks actually run and the remaining validation boundary.

@@ -5,6 +5,11 @@ dist/
 coverage/
 *.tsbuildinfo
 
+# Local lockfiles from alternate package managers; pnpm-lock.yaml is the CI snapshot
+/package-lock.json
+/bun.lock
+/bun.lockb
+
 # Local runtime state and credentials
 .tinycode/
 .env

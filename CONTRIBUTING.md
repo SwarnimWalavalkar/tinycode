@@ -4,21 +4,25 @@ Tinycode is in an early beta. Small bug reports and focused fixes are especially
 
 ## Development
 
-Use Node 24 (see `.node-version`), pnpm 10.33.3 (pinned in `package.json`), and Git. macOS and Linux are the intended platforms. Install and authenticate a supported harness only when you want to run real agent tasks.
+Use Node 24 (see `.node-version`), Git, and npm, pnpm, or Bun. macOS and Linux are the intended platforms. Install and authenticate a supported harness only when you want to run real agent tasks.
 
 ```sh
-pnpm install --frozen-lockfile
-pnpm dev
+npm install
+npm run dev
 ```
+
+Use `pnpm run` or `bun run` in place of `npm run` if you prefer. All three use Node.js to run Tinycode.
+
+`pnpm-lock.yaml` is the checked-in dependency snapshot; the pnpm CI jobs install it with pnpm 10.33.3 and 11.25.0. Additional jobs verify clean npm and Bun installs. Those managers may generate their own local lockfiles, which are ignored. When changing dependencies, update `package.json` and regenerate `pnpm-lock.yaml` with `pnpm install --lockfile-only`.
 
 The UI is at `http://127.0.0.1:4737`; the server is at `http://127.0.0.1:4738`. Use a separate `TINYCODE_DATA_DIR` if you want disposable development state. The default, `~/.tinycode`, contains real task history and workspaces.
 
 ## Validation
 
 ```sh
-pnpm check
-pnpm build
-pnpm test:smoke
+npm run check
+npm run build
+npm run test:smoke
 ```
 
 These checks use controlled adapters and disposable directories. They do not send model prompts or require harness credentials. The smoke checks briefly bind loopback ports 4739 and 4742 and exercise the built UI, authentication, WebSockets, a real PTY, files, Git/worktrees, and image uploads. They stop their servers and remove their fixtures when finished.

@@ -7,7 +7,7 @@
   "type": "module",
   "scripts": {
     "postinstall": "node scripts/prepare.mjs",
-    "dev": "concurrently -k -n server,web -c blue,green \"pnpm dev:server\" \"pnpm dev:web\"",
+    "dev": "concurrently -k -n server,web -c blue,green \"tsx watch src/server/index.ts\" \"vite\"",
     "dev:server": "tsx watch src/server/index.ts",
     "dev:web": "vite",
     "build": "tsc -b && vite build",
@@ -45,5 +45,9 @@
   "engines": {
     "node": ">=22.19.0"
   },
-  "packageManager": "pnpm@10.33.3"
+  "trustedDependencies": [
+    "better-sqlite3",
+    "esbuild",
+    "node-pty"
+  ]
 }

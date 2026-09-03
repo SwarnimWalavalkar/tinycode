@@ -1,5 +1,13 @@
 # v0 validation
 
+## Package manager support · September 3, 2026
+
+Clean installs with npm, pnpm, and Bun passed on macOS arm64 and Linux x64 using Node 24. The checks covered npm 11, pnpm 10/11, and Bun 1.4.0. Each manager passed the 88-test suite, production build, and HTTP/image smoke checks, including authenticated WebSockets, SQLite, a real PTY, files, and Git/worktrees. No model prompts were sent.
+
+On macOS, each manager's `run dev` command also served the UI and proxied API with nested `pnpm` invocations deliberately blocked. All three launch the tools directly and use Node.js as the runtime. The image-runtime test cleanup now waits for persisted turn completion before closing its database.
+
+CI covers all three package managers on Linux, plus pnpm on macOS and Node 22.19. The updated workflow passed Actionlint 1.7.12 locally; its new GitHub jobs have not run yet. `pnpm-lock.yaml` remains the checked-in dependency snapshot, while npm and Bun can generate ignored local lockfiles.
+
 ## Beta repository baseline · September 3, 2026
 
 The initial Git snapshot contains source, tests, documentation, the lockfile, and attributed assets. Runtime state, databases, uploads, environment files, dependency caches, and build output are excluded. Reference links point to the studied upstream revisions rather than local clone directories.
