@@ -1,6 +1,18 @@
 import { timingSafeEqual } from "node:crypto";
 import type { IncomingMessage } from "node:http";
 
+export function unauthenticatedHostAllowed(req: IncomingMessage, devOrigin?: string) {
+  const host = req.headers.host ?? "";
+  if (["localhost", "127.0.0.1", "[::1]"].includes(host.replace(/:\d+$/, ""))) return true;
+  // The configured dev origin relies on the operator's authenticated proxy.
+  // Forwarded headers and other hosts never grant access on their own.
+  return (
+    !!devOrigin &&
+    host === new URL(devOrigin).host &&
+    (!req.headers.origin || req.headers.origin === devOrigin)
+  );
+}
+
 export function sameOrigin(
   req: IncomingMessage,
   configuredOrigin?: string,

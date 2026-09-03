@@ -9,7 +9,7 @@
     "postinstall": "node scripts/prepare.mjs",
     "dev": "concurrently -k -n server,web -c blue,green \"pnpm dev:server\" \"pnpm dev:web\"",
     "dev:server": "tsx watch src/server/index.ts",
-    "dev:web": "vite --host 127.0.0.1",
+    "dev:web": "vite",
     "build": "tsc -b && vite build",
     "start": "NODE_ENV=production tsx src/server/index.ts",
     "check": "tsc -b && vitest run",

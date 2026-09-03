@@ -15,13 +15,21 @@ import { adapters, probeProviders } from "./adapters/index.js";
 import { modelCatalog } from "./adapters/models.js";
 import { thinkingOptions } from "./adapters/thinking.js";
 import { diff, file, gitInfo, gitStatus, saveFile, tree } from "./workspace.js";
-import { authenticated, sameOrigin, tokenMatches, websocketAuthenticated } from "./auth.js";
+import {
+  authenticated,
+  sameOrigin,
+  tokenMatches,
+  unauthenticatedHostAllowed,
+  websocketAuthenticated,
+} from "./auth.js";
+import { developmentOrigin } from "./dev-network.js";
 import type { ClientPacket, ProviderId, ServerPacket } from "../shared/contracts.js";
 
 const host = process.env.TINYCODE_HOST ?? "127.0.0.1";
 const port = Number(process.env.TINYCODE_PORT ?? 4738);
 const token = process.env.TINYCODE_TOKEN;
 const origin = process.env.TINYCODE_ORIGIN;
+const devOrigin = developmentOrigin();
 const allowedOrigins = (process.env.TINYCODE_ALLOWED_ORIGINS ?? "")
   .split(",")
   .map((value) => value.trim())
@@ -104,11 +112,9 @@ const server = createServer(async (req, res) => {
       res.end();
       return;
     }
-    // Reject DNS rebinding for the unauthenticated loopback-only mode.
-    if (
-      !token &&
-      !["localhost", "127.0.0.1", "[::1]"].includes((req.headers.host ?? "").replace(/:\d+$/, ""))
-    ) {
+    // An explicitly configured dev proxy can carry its public hostname to
+    // the loopback backend. Other unauthenticated hosts are rejected.
+    if (!token && !unauthenticatedHostAllowed(req, devOrigin)) {
       json(res, { error: "Unexpected host" }, 403);
       return;
     }
@@ -385,8 +391,7 @@ server.on("upgrade", (req, socket, head) => {
     req.url !== "/socket" ||
     !sameOrigin(req, origin, allowedOrigins) ||
     !websocketAuthenticated(req, token) ||
-    (!token &&
-      !["localhost", "127.0.0.1", "[::1]"].includes((req.headers.host ?? "").replace(/:\d+$/, "")))
+    (!token && !unauthenticatedHostAllowed(req, devOrigin))
   ) {
     socket.end("HTTP/1.1 403 Forbidden\r\nConnection: close\r\n\r\n");
     return;
@@ -461,7 +466,10 @@ wss.on("connection", (ws) => {
   });
   ws.on("error", () => {});
 });
-server.listen(port, host, () => console.log(`Tinycode · http://${host}:${port} · ${dataDir}`));
+server.listen(port, host, () => {
+  console.log(`Tinycode · http://${host}:${port} · ${dataDir}`);
+  if (devOrigin) console.log(`Development URL · ${devOrigin}/`);
+});
 function shutdown() {
   void titles.dispose();
   runtime.dispose();

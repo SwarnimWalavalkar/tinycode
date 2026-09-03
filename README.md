@@ -91,6 +91,18 @@ pnpm start
 
 Enter the token in the browser when prompted. Remote listeners refuse to start without a token of at least 24 characters. HTTP and WebSocket access require it. The token grants access to the server user's development environment; this is not a multi-user sandbox or a public hosting service. A reverse proxy must forward WebSocket upgrades and the `Sec-WebSocket-Protocol` request header.
 
+### Development behind an authenticated proxy
+
+For a development server behind a reverse proxy that already authenticates users, set the exact browser-facing origin:
+
+```sh
+TINYCODE_DEV_ORIGIN=https://dev.example.com pnpm dev
+```
+
+This explicitly exposes Vite on `0.0.0.0:4737` and admits the configured hostname. Route that origin to port 4737, preserving the request Host and Origin headers and forwarding WebSocket upgrades. The UI, API, images, terminal, and hot reload share the same origin; the backend stays on `127.0.0.1:4738`. Custom public ports are supported. The development URL is printed at startup.
+
+With no Tinycode token, this mode delegates access control to your proxy. It must authenticate every request, including WebSocket connections, and prevent direct access to the listener. Use HTTPS for public access. Tinycode does not detect or trust any hosting provider automatically. Without this setting, development stays on loopback; `pnpm start` ignores it and retains the production access controls above.
+
 ### Local UI with a directly hosted remote server
 
 Allow the local UI's exact origin on the remote server:
@@ -118,6 +130,7 @@ Configuration is read from the server process environment. Tinycode does not aut
 | `TINYCODE_DATA_DIR`           | `~/.tinycode`                                                  |
 | `TINYCODE_TOKEN`              | None for loopback; required for remote binding                 |
 | `TINYCODE_ORIGIN`             | Request Host; set the public origin behind a proxy             |
+| `TINYCODE_DEV_ORIGIN`         | None; explicit public dev origin behind an authenticated proxy |
 | `TINYCODE_ALLOWED_ORIGINS`    | None; comma-separated additional frontend origins              |
 | `TINYCODE_CODEX_BIN`          | `codex` on PATH                                                |
 | `TINYCODE_CLAUDE_BIN`         | `claude` on PATH                                               |

@@ -5,6 +5,7 @@ Tinycode is an early, single-user development tool. Each beta tester should run 
 ## Running a server
 
 - The default listener is loopback-only. SSH port forwarding is the simplest remote setup; see the [README](README.md#remote-machine).
+- `TINYCODE_DEV_ORIGIN` explicitly exposes the development frontend on port 4737 and admits its configured public origin. Without a Tinycode token, access control is delegated to your reverse proxy: authenticate all HTTP and WebSocket requests and prevent direct access to that listener. The backend stays on loopback by default. Production mode ignores this development setting.
 - Direct remote access requires a long random `TINYCODE_TOKEN`. Use HTTPS or a trusted private network. Keep the listener off the public internet unless the host and transport are secured.
 - Set `TINYCODE_ORIGIN` to the browser-facing origin behind a reverse proxy. Allow separate frontend origins explicitly; do not use broad origin rules.
 - Harness permission settings apply to harness actions. They do not restrict actions you take through the manual terminal or file editor. Pi tool allowlists are not an OS sandbox, and native extensions still run.
