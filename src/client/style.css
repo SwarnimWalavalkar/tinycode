@@ -195,15 +195,15 @@
   }
   .mark i:nth-child(3) {
     left: 0;
-    top: calc(var(--pixel)*2);
+    top: calc(var(--pixel) * 2);
   }
   .mark i:nth-child(4) {
-    left: calc(var(--pixel)*2);
-    top: calc(var(--pixel)*2);
+    left: calc(var(--pixel) * 2);
+    top: calc(var(--pixel) * 2);
   }
   .mark i:nth-child(5) {
-    left: calc(var(--pixel)*3);
-    top: calc(var(--pixel)*2);
+    left: calc(var(--pixel) * 3);
+    top: calc(var(--pixel) * 2);
   }
   .mark.small {
     width: 21px;
@@ -341,18 +341,7 @@
     letter-spacing: 0;
     font-size: 9px;
   }
-  .files-pane {
-    width: 318px;
-    flex-shrink: 0;
-    border-left: 1px solid var(--line);
-    background: var(--surface);
-    display: flex;
-    flex-direction: column;
-    min-height: 0;
-  }
-  .files-pane.preview {
-    width: min(44vw, 610px);
-  }
+
   .terminal-pane {
     height: 270px;
     min-height: 150px;
@@ -1376,82 +1365,97 @@
     color: #b8baac;
     font-size: 12px;
   }
-  .files-pane header {
-    height: 43px;
-    display: flex;
-    align-items: center;
-    border-bottom: 1px solid var(--line);
-    padding: 0 8px;
-    gap: 2px;
-    flex-shrink: 0;
-    font-size: 10px;
-  }
-  .panel-tabs {
-    display: flex;
-    align-self: stretch;
-    gap: 6px;
-    flex: 1;
-  }
-  .panel-tabs button {
-    font-size: 10px;
-    color: var(--muted);
-    padding: 0 9px;
-    border-bottom: 2px solid transparent;
-    position: relative;
-    top: 1px;
-    gap: 4px;
-  }
-  .panel-tabs button.selected {
-    border-color: var(--accent);
-    color: var(--text);
-  }
-  .panel-tabs small {
-    font-size: 8px;
-    background: var(--highlight);
-    padding: 1px 4px;
-    border-radius: 3px;
-  }
-  .file-list {
-    flex: 1;
-    overflow: auto;
-    padding: 10px 0;
-  }
-  .tree-row {
+
+  .refresh-harnesses {
     width: 100%;
     justify-content: flex-start;
-    gap: 6px;
-    padding-top: 6px;
-    padding-bottom: 6px;
-    font-size: 10px;
+    gap: 7px;
+    border-top: 1px solid var(--line);
+    padding: 11px 14px;
     color: var(--quiet);
+    font-size: 11px;
   }
-  .tree-row:hover,
-  .changed-row:hover {
+  .refresh-harnesses:hover {
     background: var(--field);
   }
-  .tree-row > svg:nth-child(2) {
-    color: var(--muted);
+  .project-browser > p {
+    color: var(--quiet);
+    font-size: 12px;
+    margin: 0 0 16px;
   }
-  .tree-row > span {
-    overflow: hidden;
-    text-overflow: ellipsis;
-    white-space: nowrap;
+  .directory-path {
+    display: flex;
+    align-items: center;
+    gap: 4px;
   }
-  .files-pane footer {
-    border-top: 1px solid var(--line);
-    font-size: 9px;
-    color: var(--muted);
-    padding: 10px 14px;
-  }
-  .files-pane.preview header > span {
-    white-space: nowrap;
-    overflow: hidden;
-    text-overflow: ellipsis;
+  .directory-path > input {
     flex: 1;
-    padding: 0 8px;
+    min-width: 0;
     font-family: var(--mono);
-    font-size: 10px;
+    font-size: 11px;
   }
+  .directory-toolbar {
+    display: flex;
+    align-items: center;
+    gap: 2px;
+    margin: 10px 0;
+  }
+  .directory-toolbar > label {
+    margin-left: auto;
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    color: var(--quiet);
+    font-size: 11px;
+  }
+  .directory-toolbar input {
+    width: auto;
+    accent-color: var(--accent);
+  }
+  .directory-list {
+    height: min(300px, 40vh);
+    overflow: auto;
+    border-block: 1px solid var(--line);
+    padding-block: 5px;
+  }
+  .directory-row {
+    display: flex;
+    width: 100%;
+    padding: 9px 7px;
+    gap: 9px;
+    text-align: left;
+    border-radius: 6px;
+    color: var(--quiet);
+    font-size: 12px;
+  }
+  .directory-row:hover {
+    background: var(--highlight);
+    color: var(--text);
+  }
+  .directory-row > span {
+    flex: 1;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+  .directory-row > svg {
+    flex-shrink: 0;
+    color: var(--muted);
+  }
+  .directory-empty {
+    height: 100%;
+    display: flex;
+    gap: 8px;
+    align-items: center;
+    justify-content: center;
+    font-size: 12px;
+    color: var(--muted);
+  }
+  .project-browser .directory-note {
+    margin: 10px 0 0;
+    font-size: 11px;
+  }
+
   .file-editor {
     flex: 1;
     resize: none;
@@ -1468,64 +1472,7 @@
     background: transparent;
     min-height: 0;
   }
-  .diff-content {
-    flex: 1;
-    overflow: auto;
-    font-family: var(--mono);
-    font-variant-ligatures: none;
-    font-size: 10px;
-    line-height: 1.8;
-    padding: 12px 0;
-  }
-  .diff-content > div {
-    white-space: pre;
-    padding: 0 12px;
-    min-width: fit-content;
-  }
-  .diff-content .added {
-    background: #8b9b6622;
-    color: #809252;
-  }
-  .diff-content .removed {
-    background: #b66e5420;
-    color: #b46c55;
-  }
-  .diff-content .hunk {
-    background: var(--field);
-    color: var(--muted);
-  }
-  .branch-label {
-    display: flex;
-    align-items: center;
-    gap: 6px;
-    font-size: 10px;
-    padding: 5px 15px 15px;
-    color: var(--quiet);
-  }
-  .changed-row {
-    width: 100%;
-    justify-content: flex-start;
-    font-size: 10px;
-    gap: 7px;
-    padding: 8px 14px;
-    color: var(--quiet);
-  }
-  .changed-row span {
-    flex: 1;
-    text-align: left;
-    white-space: nowrap;
-    overflow: hidden;
-    text-overflow: ellipsis;
-  }
-  .changed-row code {
-    font-size: 9px;
-  }
-  .changed-row code.new {
-    color: #85975e;
-  }
-  .changed-row code.modified {
-    color: var(--accent);
-  }
+
   .panel-empty {
     display: flex;
     align-items: center;
@@ -1792,12 +1739,7 @@
       padding-left: 25px;
       padding-right: 25px;
     }
-    .files-pane {
-      width: 270px;
-    }
-    .files-pane.preview {
-      width: 42vw;
-    }
+
     .brand strong {
       font-size: 18px;
     }
@@ -1815,19 +1757,7 @@
     .quiet-label {
       display: none;
     }
-    .files-pane {
-      position: absolute;
-      right: 0;
-      top: 57px;
-      bottom: 0;
-      width: 320px;
-      max-width: 90vw;
-      z-index: 10;
-      box-shadow: -12px 0 40px #15190910;
-    }
-    .files-pane.preview {
-      width: 75vw;
-    }
+
     .statusbar > span:last-child {
       display: none;
     }
@@ -1870,9 +1800,7 @@
     .composer {
       padding: 13px;
     }
-    .files-pane {
-      top: 51px;
-    }
+
     .composer-caption > span:last-child {
       display: none;
     }

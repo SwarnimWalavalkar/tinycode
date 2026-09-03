@@ -1,8 +1,8 @@
 import { useEffect, useRef, useState } from "react";
-import { Check, ChevronDown, LoaderCircle, Search } from "lucide-react";
-import type { ModelCatalog, ProviderId } from "../shared/contracts";
+import { Check, ChevronDown, LoaderCircle, RefreshCw, Search } from "lucide-react";
+import type { ModelCatalog, ProviderId, ProviderInfo } from "../shared/contracts";
 import { modelLabel } from "../shared/models";
-import { api, useShell } from "./state";
+import { api, setShell, useShell } from "./state";
 import { ProviderMark, providerNames } from "./Harness";
 import ThinkingPicker from "./ThinkingPicker";
 import PermissionsPicker from "./PermissionsPicker";
@@ -39,7 +39,12 @@ export default function ModelPicker({
   const [retry, setRetry] = useState(0);
   const [saving, setSaving] = useState(false);
   const [saveError, setSaveError] = useState("");
-  const [result, setResult] = useState<{ key: string; catalog?: ModelCatalog; error?: string }>();
+  const [refreshing, setRefreshing] = useState(false);
+  const [result, setResult] = useState<{
+    key: string;
+    catalog?: ModelCatalog;
+    error?: string;
+  }>();
   const root = useRef<HTMLDivElement>(null);
   const trigger = useRef<HTMLButtonElement>(null);
   const searchInput = useRef<HTMLInputElement>(null);
@@ -47,6 +52,8 @@ export default function ModelPicker({
   const catalog = result?.key === key ? result.catalog : undefined;
   const error = result?.key === key ? result.error : undefined;
   const available = providers.find((p) => p.id === provider)?.available;
+  const readyProviders = providers.filter((p) => p.available);
+  const checking = !providers.length || providers.some((p) => p.readiness === "checking");
   const loading = available && !catalog && !error;
   useEffect(() => {
     if (!available) return;
@@ -71,6 +78,8 @@ export default function ModelPicker({
   }, [catalog, model, provider, taskId, onChange]);
   useEffect(() => {
     if (!open) return;
+    // Refresh native auth in the background; a slow harness must not delay typing or sending.
+    void api<ProviderInfo[]>("/providers").catch(() => {});
     searchInput.current?.focus();
     function outside(event: PointerEvent) {
       if (!root.current?.contains(event.target as Node)) setOpen(false);
@@ -103,6 +112,7 @@ export default function ModelPicker({
     `${m.label} ${m.id} ${m.description ?? ""}`.toLowerCase().includes(search.toLowerCase()),
   );
   async function choose(id: string) {
+    if (!available) return;
     setSaving(true);
     setSaveError("");
     try {
@@ -116,6 +126,21 @@ export default function ModelPicker({
       setSaving(false);
     }
   }
+  async function refresh() {
+    setRefreshing(true);
+    setSaveError("");
+    try {
+      const providers = await api<ProviderInfo[]>("/providers", {
+        method: "POST",
+      });
+      setShell({ providers });
+      setRetry((n) => n + 1);
+    } catch (error) {
+      setSaveError(error instanceof Error ? error.message : String(error));
+    } finally {
+      setRefreshing(false);
+    }
+  }
   return (
     <div className="composer-settings">
       <div className="model-picker" ref={root}>
@@ -123,10 +148,18 @@ export default function ModelPicker({
           ref={trigger}
           className="model-trigger"
           type="button"
-          aria-label={`Harness and model: ${providerNames[provider]}, ${label}`}
+          aria-label={
+            !taskId && !available
+              ? "Connect a harness"
+              : `Harness and model: ${providerNames[provider]}, ${label}`
+          }
           aria-haspopup="dialog"
           aria-expanded={open}
-          title={`${providerNames[provider]} · ${selectedId ?? label}${disabled ? " · Available after this turn" : ""}`}
+          title={
+            !taskId && !available
+              ? "Connect a harness"
+              : `${providerNames[provider]} · ${selectedId ?? label}${disabled ? " · Available after this turn" : ""}`
+          }
           onClick={() => {
             setOpen((v) => !v);
             setSearch("");
@@ -134,10 +167,16 @@ export default function ModelPicker({
           }}
           disabled={disabled}
         >
-          <ProviderMark id={provider} />
-          <span className="model-harness">{providerNames[provider]}</span>
-          <span className="model-separator">/</span>
-          <span className="model-value">{label}</span>
+          {!taskId && !available ? (
+            <span>{checking ? "Checking harnesses…" : "Connect a harness"}</span>
+          ) : (
+            <>
+              <ProviderMark id={provider} />
+              <span className="model-harness">{providerNames[provider]}</span>
+              <span className="model-separator">/</span>
+              <span className="model-value">{label}</span>
+            </>
+          )}
           <ChevronDown size={12} />
         </button>
         {open && (
@@ -156,17 +195,13 @@ export default function ModelPicker({
           >
             {!taskId ? (
               <div className="model-providers" role="group" aria-label="Harness">
-                {(["codex", "claude", "pi"] as ProviderId[]).map((id) => (
+                {readyProviders.map(({ id }) => (
                   <button
                     key={id}
                     type="button"
                     aria-pressed={provider === id}
-                    disabled={!providers.find((p) => p.id === id)?.available || saving}
-                    title={
-                      !providers.find((p) => p.id === id)?.available
-                        ? "Not installed on this server"
-                        : providerNames[id]
-                    }
+                    disabled={saving}
+                    title={providerNames[id]}
                     onClick={() => {
                       setSearch("");
                       if (id !== provider) void onChange(id, "");
@@ -184,29 +219,31 @@ export default function ModelPicker({
                 {providerNames[provider]}
               </div>
             )}
-            <div className="model-search">
-              <Search size={15} />
-              <input
-                ref={searchInput}
-                aria-label="Search models"
-                placeholder="Search models or enter an ID"
-                value={search}
-                maxLength={200}
-                onChange={(e) => setSearch(e.target.value)}
-                onKeyDown={(e) => {
-                  if (e.key === "ArrowDown") {
-                    e.preventDefault();
-                    root.current
-                      ?.querySelector<HTMLButtonElement>('[role="menuitemradio"]')
-                      ?.focus();
-                  }
-                  if (e.key === "Enter" && search.trim() && !models.length && !loading) {
-                    e.preventDefault();
-                    void choose(search.trim());
-                  }
-                }}
-              />
-            </div>
+            {available && (
+              <div className="model-search">
+                <Search size={15} />
+                <input
+                  ref={searchInput}
+                  aria-label="Search models"
+                  placeholder="Search models or enter an ID"
+                  value={search}
+                  maxLength={200}
+                  onChange={(e) => setSearch(e.target.value)}
+                  onKeyDown={(e) => {
+                    if (e.key === "ArrowDown") {
+                      e.preventDefault();
+                      root.current
+                        ?.querySelector<HTMLButtonElement>('[role="menuitemradio"]')
+                        ?.focus();
+                    }
+                    if (e.key === "Enter" && search.trim() && !models.length && !loading) {
+                      e.preventDefault();
+                      void choose(search.trim());
+                    }
+                  }}
+                />
+              </div>
+            )}
             <div
               className="model-options"
               role="menu"
@@ -243,34 +280,41 @@ export default function ModelPicker({
                 </div>
               )}
               {!available && (
-                <p className="model-message">This harness isn’t installed on the server.</p>
+                <p className="model-message">
+                  {checking
+                    ? "Checking harness authentication…"
+                    : taskId
+                      ? "Sign in to this task’s harness on the server, then refresh."
+                      : "Sign in to Codex, Claude Code, or a Pi provider on the server, then refresh."}
+                </p>
               )}
-              {models.map((m) => (
-                <button
-                  type="button"
-                  role="menuitemradio"
-                  aria-checked={
-                    m.id === model || m.id === selectedId || m.resolvedId === selectedId
-                  }
-                  disabled={saving}
-                  key={m.id}
-                  title={m.description ?? m.id}
-                  onClick={() => void choose(m.id)}
-                >
-                  <span>
-                    {m.label}
-                    {provider === "pi" && <small>{m.description}</small>}
-                  </span>
-                  {(m.id === model || m.id === selectedId || m.resolvedId === selectedId) && (
-                    <Check size={14} />
-                  )}
-                </button>
-              ))}
+              {available &&
+                models.map((m) => (
+                  <button
+                    type="button"
+                    role="menuitemradio"
+                    aria-checked={
+                      m.id === model || m.id === selectedId || m.resolvedId === selectedId
+                    }
+                    disabled={saving}
+                    key={m.id}
+                    title={m.description ?? m.id}
+                    onClick={() => void choose(m.id)}
+                  >
+                    <span>
+                      {m.label}
+                      {provider === "pi" && <small>{m.description}</small>}
+                    </span>
+                    {(m.id === model || m.id === selectedId || m.resolvedId === selectedId) && (
+                      <Check size={14} />
+                    )}
+                  </button>
+                ))}
               {catalog && !models.length && !search && (
                 <p className="model-message">No models available. Enter a model ID above.</p>
               )}
             </div>
-            {search.trim() && !models.length && !loading && (
+            {available && search.trim() && !models.length && !loading && (
               <button
                 className="custom-model"
                 disabled={saving}
@@ -284,30 +328,43 @@ export default function ModelPicker({
                 {saveError}
               </p>
             )}
+            <button
+              type="button"
+              className="refresh-harnesses"
+              disabled={refreshing || checking}
+              onClick={() => void refresh()}
+            >
+              <RefreshCw size={13} className={refreshing ? "spin" : ""} />
+              {refreshing ? "Checking…" : "Refresh harnesses"}
+            </button>
           </div>
         )}
       </div>
-      <ThinkingPicker
-        provider={provider}
-        model={model || resolvedModel || null}
-        value={thinkingLevel}
-        projectId={projectId}
-        taskId={taskId}
-        disabled={disabled || saving}
-        onChange={onThinkingChange}
-      />
-      <PermissionsPicker
-        provider={provider}
-        value={permissionMode}
-        disabled={disabled}
-        onChange={onPermissionsChange}
-        autoModeAvailable={
-          (
-            selected ??
-            (!selectedId ? catalog?.models.find((m) => m.id === catalog.defaultModel) : undefined)
-          )?.supportsAutoMode
-        }
-      />
+      {available && (
+        <ThinkingPicker
+          provider={provider}
+          model={model || resolvedModel || null}
+          value={thinkingLevel}
+          projectId={projectId}
+          taskId={taskId}
+          disabled={disabled || saving}
+          onChange={onThinkingChange}
+        />
+      )}
+      {available && (
+        <PermissionsPicker
+          provider={provider}
+          value={permissionMode}
+          disabled={disabled}
+          onChange={onPermissionsChange}
+          autoModeAvailable={
+            (
+              selected ??
+              (!selectedId ? catalog?.models.find((m) => m.id === catalog.defaultModel) : undefined)
+            )?.supportsAutoMode
+          }
+        />
+      )}
     </div>
   );
 }

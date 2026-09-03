@@ -5,7 +5,10 @@ import { JsonLines } from "./jsonl.js";
 import type { Native } from "./types.js";
 
 async function discover(provider: ProviderInfo, cwd: string): Promise<ModelCatalog> {
-  if (!provider.available) throw new Error(`${provider.name} is not installed on this server`);
+  if (!provider.available)
+    throw new Error(
+      `${provider.name} is not ready. Check its login on the server, then refresh harnesses.`,
+    );
   if (provider.id === "claude") {
     let release!: () => void;
     const gate = new Promise<void>((resolve) => {
@@ -108,13 +111,17 @@ async function discover(provider: ProviderInfo, cwd: string): Promise<ModelCatal
       rpc.request({ type: "get_available_models" }, 15000),
       rpc.request({ type: "get_state" }, 15000),
     ]);
+    const models = (catalog.models ?? []).map((m: Native) => ({
+      id: `${m.provider}/${m.id}`,
+      label: m.name ?? modelLabel(m.id),
+      description: m.provider,
+    }));
+    const selected = state.model ? `${state.model.provider}/${state.model.id}` : null;
     return {
-      models: (catalog.models ?? []).map((m: Native) => ({
-        id: `${m.provider}/${m.id}`,
-        label: m.name ?? modelLabel(m.id),
-        description: m.provider,
-      })),
-      defaultModel: state.model ? `${state.model.provider}/${state.model.id}` : null,
+      models,
+      defaultModel: models.some((m: ModelOption) => m.id === selected)
+        ? selected
+        : (models[0]?.id ?? null),
     };
   } finally {
     rpc.dispose();
@@ -123,6 +130,9 @@ async function discover(provider: ProviderInfo, cwd: string): Promise<ModelCatal
 
 // Lazy, bounded, shared across browser attachments; discovery never delays bootstrap.
 const cache = new Map<string, { expires: number; value: Promise<ModelCatalog> }>();
+export function clearModelCatalogs() {
+  cache.clear();
+}
 export function modelCatalog(provider: ProviderInfo, cwd: string): Promise<ModelCatalog> {
   const key = JSON.stringify([provider.id, provider.command, cwd]);
   const hit = cache.get(key);

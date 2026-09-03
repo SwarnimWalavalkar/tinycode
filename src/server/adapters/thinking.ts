@@ -7,7 +7,8 @@ async function discover(
   cwd: string,
   model: string | null,
 ): Promise<ThinkingOptions> {
-  if (!provider.available) throw new Error(`${provider.name} is not installed on this server`);
+  if (!provider.available)
+    throw new Error(`${provider.name} is not ready. Check its login on the server, then refresh harnesses.`);
   if (provider.id !== "pi") {
     const catalog = await modelCatalog(provider, cwd);
     const selected = catalog.models.find(

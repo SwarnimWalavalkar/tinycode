@@ -18,7 +18,6 @@ import {
   ChevronRight,
   Circle,
   Folder,
-  FolderOpen,
   GitBranch,
   Globe2,
   LoaderCircle,
@@ -46,9 +45,11 @@ import type {
   ProviderId,
   Task,
   QueuedMessage,
+  ProviderInfo,
 } from "../shared/contracts";
 import { taskAttentionLabel } from "../shared/attention";
 import {
+  api,
   earlier,
   getShell,
   latest,
@@ -67,6 +68,7 @@ import MessageQueue from "./MessageQueue";
 import { ImageShelf, useDraftImages } from "./Images";
 import { IMAGE_TYPES } from "../shared/images";
 import Dialog from "./Dialog";
+import ProjectDialog from "./ProjectDialog";
 import ConnectionDialog from "./ConnectionDialog";
 import {
   checkConnection,
@@ -147,51 +149,6 @@ function Status({ status }: { status: Task["status"] }) {
   );
 }
 
-function ProjectDialog({ onClose, onAdd }: { onClose: () => void; onAdd: (p: Project) => void }) {
-  const [path, setPath] = useState("");
-  const [busy, setBusy] = useState(false);
-  const [error, setError] = useState("");
-  async function submit(e: FormEvent) {
-    e.preventDefault();
-    setBusy(true);
-    try {
-      const p = await post<Project>("/projects", { path });
-      onAdd(p);
-      onClose();
-    } catch (e) {
-      setError(e instanceof Error ? e.message : String(e));
-    } finally {
-      setBusy(false);
-    }
-  }
-  return (
-    <Dialog title="Open a project" onClose={onClose}>
-      <form onSubmit={(e) => void submit(e)}>
-        <p>Choose a folder on the machine running Tinycode.</p>
-        <label htmlFor="project-path">Project path</label>
-        <input
-          id="project-path"
-          autoFocus
-          value={path}
-          onChange={(e) => setPath(e.target.value)}
-          placeholder="~/projects/my-app"
-          autoComplete="off"
-          spellCheck={false}
-        />
-        {error && <div className="form-error">{error}</div>}
-        <div className="dialog-actions">
-          <button type="button" className="button secondary" onClick={onClose}>
-            Cancel
-          </button>
-          <button className="button primary" disabled={busy || !path.trim()}>
-            {busy ? <LoaderCircle size={15} className="spin" /> : <FolderOpen size={15} />}Open
-            project
-          </button>
-        </div>
-      </form>
-    </Dialog>
-  );
-}
 function SearchDialog({ onClose }: { onClose: () => void }) {
   const { tasks, projects } = useShell();
   const [query, setQuery] = useState("");
@@ -965,6 +922,14 @@ export function App() {
   }, []);
   const project = shell.projects.find((p) => p.id === (task ? task.projectId : selectedProject));
   const projectlessTasks = shell.tasks.filter((t) => t.projectId === null);
+  useEffect(() => {
+    if (!shell.connected) return;
+    const refresh = () => {
+      void api<ProviderInfo[]>("/providers").catch(() => {});
+    };
+    window.addEventListener("focus", refresh);
+    return () => window.removeEventListener("focus", refresh);
+  }, [shell.connected]);
   const available = shell.providers.find((p) => p.id === provider)?.available;
   async function create(text: string, images: string[]) {
     const useWorktree = project?.isGit && worktree;
@@ -1296,7 +1261,13 @@ export function App() {
           </div>
           {task && files && (
             <Suspense fallback={<div className="panel-loading">Opening files…</div>}>
-              <Files key={task.id} taskId={task.id} onClose={() => setFiles(false)} />
+              <Files
+                key={task.id}
+                theme={dark ? "dark" : "light"}
+                taskId={task.id}
+                workspaceName={project?.name ?? "Scratchpad"}
+                onClose={() => setFiles(false)}
+              />
             </Suspense>
           )}
         </div>
