@@ -70,7 +70,7 @@ export default function CodePreview({
       const note = !files.some((file) => file.hunks.length)
         ? /(?:Binary files|GIT binary patch)/.test(patch.content)
           ? "Binary file changed. No text preview available."
-          : patch.content || patch.newFile
+          : patch.content || patch.newFile || patch.oldFile !== undefined
             ? "File metadata changed. No changed text lines."
             : "No changes compared with HEAD."
         : undefined;

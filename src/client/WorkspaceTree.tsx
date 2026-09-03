@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useLayoutEffect, useRef, useState } from "react";
 import { FileTree, useFileTree } from "@pierre/trees/react";
 import type { GitStatusEntry } from "@pierre/trees";
 import { LoaderCircle } from "lucide-react";
@@ -22,7 +22,9 @@ export default function WorkspaceTree({
   theme: "light" | "dark";
 }) {
   const open = useRef(onOpen);
-  open.current = onOpen;
+  useLayoutEffect(() => {
+    open.current = onOpen;
+  }, [onOpen]);
   const [loading, setLoading] = useState(!changesOnly);
   const [error, setError] = useState("");
   const [empty, setEmpty] = useState(false);
