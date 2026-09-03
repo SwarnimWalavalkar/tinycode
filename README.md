@@ -20,6 +20,15 @@ Install a harness and sign in using its own CLI on the machine that will run the
 | Claude Code | [Official setup](https://code.claude.com/docs/en/overview)                                 | `claude`                   |
 | Pi          | [Coding agent setup](https://github.com/earendil-works/pi/tree/main/packages/coding-agent) | `pi`                       |
 
+Linux installs compile the terminal bindings from source, so Python 3, Make, and a C/C++ compiler are required. On Debian/Ubuntu, install them before running pnpm:
+
+```sh
+sudo apt-get update
+sudo apt-get install -y python3 build-essential
+```
+
+On macOS, install Xcode Command Line Tools if native bindings need to compile. Tinycode includes `node-gyp` as a build dependency; no global installation is needed. Do not skip dependency build scripts: the terminal and database require their native components.
+
 If pnpm is not installed, run `npm install --global pnpm@10.33.3`. From this checkout:
 
 ```sh
@@ -32,7 +41,7 @@ Open `http://127.0.0.1:4738`, choose a harness and model, and send a task. **New
 
 Tinycode uses each harness's existing authentication and settings. Your provider's usage limits and charges apply, including the small-model requests used for task names. Stop the server with Ctrl+C when you are done; this interrupts active turns and closes its terminals.
 
-If installation needs to compile native SQLite or terminal bindings, install Python 3 and a C/C++ build toolchain (Xcode Command Line Tools on macOS, or `build-essential` on Debian/Ubuntu). Do not skip dependency build scripts: the terminal and database require their native components.
+If installation fails with only `ELIFECYCLE`, rerun `pnpm install --frozen-lockfile --reporter=append-only` to show the underlying dependency build error.
 
 Projectless tasks appear under **Scratchpad** in the sidebar. Each has its own persistent folder at `$TINYCODE_DATA_DIR/workspaces/<task-id>` (under `~/.tinycode` by default), with the same file editor, terminal, harness, and resume support. No Git repository is created automatically. Files remain after closing the task or restarting Tinycode.
 

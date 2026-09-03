@@ -2,3 +2,13 @@ onlyBuiltDependencies:
   - better-sqlite3
   - esbuild
   - node-pty
+
+# Native install scripts need node-gyp on their own PATH. Standalone pnpm
+# installations may not provide it, and root binaries are linked too late.
+packageExtensions:
+  node-pty@1:
+    dependencies:
+      node-gyp: 12.4.0
+  better-sqlite3@12:
+    dependencies:
+      node-gyp: 12.4.0
