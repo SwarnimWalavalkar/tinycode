@@ -1,0 +1,28 @@
+# Dependencies and generated output
+node_modules/
+.pnpm-store/
+dist/
+coverage/
+*.tsbuildinfo
+
+# Local runtime state and credentials
+.tinycode/
+.env
+.env.*
+!.env.example
+*.db
+*.db-*
+*.sqlite
+*.sqlite-*
+*.sqlite3
+*.sqlite3-*
+*.pem
+*.key
+
+# Local tooling and OS files
+.codex/
+.claude/
+.pi/
+.idea/
+*.log
+.DS_Store
