@@ -7,12 +7,16 @@ import type {
 
 const TOKEN_ENV = "TINYCODE_CLOUDFLARE_AGENT_TOKEN";
 
+function validateAgentUrl(url: URL): URL {
+  if (url.protocol !== "https:" || url.username || url.password || url.hash)
+    throw new Error("TINYCODE_CLOUDFLARE_AGENT_URL must be an HTTPS origin");
+  return url;
+}
+
 export function cloudflareAgentUrl(): string | undefined {
   const value = process.env.TINYCODE_CLOUDFLARE_AGENT_URL?.trim();
   if (!value) return undefined;
-  const url = new URL(value);
-  if (!/^https?:$/.test(url.protocol) || url.username || url.password || url.hash)
-    throw new Error("TINYCODE_CLOUDFLARE_AGENT_URL must be an HTTP(S) origin");
+  const url = validateAgentUrl(new URL(value));
   url.pathname = url.pathname.replace(/\/+$/, "");
   url.search = "";
   return url.href.replace(/\/$/, "");
@@ -33,11 +37,12 @@ export async function cloudflareFetch(
   path: string,
   init: RequestInit = {},
 ): Promise<Response> {
+  const endpoint = validateAgentUrl(new URL(cloudflareEndpoint(base, path)));
   const headers = new Headers(init.headers);
   headers.set("authorization", `Bearer ${token()}`);
   headers.set("accept", "application/json, application/x-ndjson");
   if (init.body !== undefined) headers.set("content-type", "application/json");
-  return fetch(cloudflareEndpoint(base, path), { ...init, headers });
+  return fetch(endpoint.href, { ...init, headers });
 }
 
 export async function cloudflareResponseError(response: Response): Promise<Error> {

@@ -5,7 +5,7 @@ import { openaiProvider } from "@earendil-works/pi-ai/providers/openai";
 import type { ModelCatalog } from "../../../src/shared/contracts.js";
 import type { Env } from "./env.js";
 
-const THINKING_LEVELS = ["off", "minimal", "low", "medium", "high", "xhigh"];
+const THINKING_LEVELS = ["off", "minimal", "low", "medium", "high", "xhigh"] as const;
 
 export function configuredModelIds(env: Env): string[] {
   const ids = (env.TINYCODE_MODELS ?? env.TINYCODE_DEFAULT_MODEL ?? "openai/gpt-5.4")
@@ -50,7 +50,7 @@ export function modelCatalog(env: Env): ModelCatalog {
         id,
         label: model.name,
         description: "Pi SDK · OpenAI · Durable Object",
-        thinkingLevels: model.reasoning ? THINKING_LEVELS : [],
+        thinkingLevels: model.reasoning ? [...THINKING_LEVELS] : [],
         defaultThinkingLevel: model.reasoning ? "medium" : null,
       }];
     } catch {
@@ -66,6 +66,18 @@ export function modelCatalog(env: Env): ModelCatalog {
   };
 }
 
+export function normalizeThinkingLevel(
+  env: Env,
+  modelId: string,
+  value?: string | null,
+): ThinkingLevel {
+  const { model } = resolveModel(env, modelId);
+  if (!model.reasoning) return "off";
+  return THINKING_LEVELS.includes(value as (typeof THINKING_LEVELS)[number])
+    ? (value as ThinkingLevel)
+    : "medium";
+}
+
 export function createPiAgent(
   env: Env,
   input: {
@@ -79,11 +91,7 @@ export function createPiAgent(
 ) {
   if (!env.OPENAI_API_KEY) throw new Error("OPENAI_API_KEY is not configured");
   const { models, model } = resolveModel(env, input.modelId);
-  const thinking = THINKING_LEVELS.includes(input.thinkingLevel ?? "")
-    ? (input.thinkingLevel as ThinkingLevel)
-    : model.reasoning
-      ? "medium"
-      : "off";
+  const thinking = normalizeThinkingLevel(env, input.modelId, input.thinkingLevel);
   return new Agent({
     sessionId: input.sessionId,
     getApiKey: async () => env.OPENAI_API_KEY,

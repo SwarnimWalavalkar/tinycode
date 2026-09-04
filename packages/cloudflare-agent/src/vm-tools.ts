@@ -8,8 +8,8 @@ export interface VmSnapshot {
 }
 
 export interface VmRuntime {
-  start(): Promise<VmSnapshot>;
-  exec(command: string, cwd: string, timeout: number): Promise<{
+  start(signal?: AbortSignal): Promise<VmSnapshot>;
+  exec(command: string, cwd: string, timeout: number, signal?: AbortSignal): Promise<{
     success: boolean;
     stdout: string;
     stderr: string;
@@ -24,6 +24,20 @@ const result = (value: unknown) => ({
   details: value as Record<string, unknown>,
 });
 
+function workspacePath(value: string): string {
+  if (!value.startsWith("/")) throw new Error("VM working directory must be inside /workspace");
+  const segments: string[] = [];
+  for (const segment of value.split("/")) {
+    if (!segment || segment === ".") continue;
+    if (segment === "..") segments.pop();
+    else segments.push(segment);
+  }
+  const normalized = `/${segments.join("/")}`;
+  if (normalized !== "/workspace" && !normalized.startsWith("/workspace/"))
+    throw new Error("VM working directory must be inside /workspace");
+  return normalized;
+}
+
 export function createVmTools(vm: VmRuntime): AgentTool<any>[] {
   return [
     {
@@ -33,7 +47,7 @@ export function createVmTools(vm: VmRuntime): AgentTool<any>[] {
         "Start this agent's isolated Cloudflare Linux sandbox. It is reused while the container is awake; files are ephemeral after an idle sleep or destroy.",
       parameters: Type.Object({}),
       executionMode: "sequential",
-      execute: async () => result(await vm.start()),
+      execute: async (_id, _input, signal) => result(await vm.start(signal)),
     },
     {
       name: "vm_exec",
@@ -46,12 +60,12 @@ export function createVmTools(vm: VmRuntime): AgentTool<any>[] {
         timeout_ms: Type.Optional(Type.Integer({ minimum: 1_000, maximum: 120_000 })),
       }),
       executionMode: "sequential",
-      execute: async (_id, input) => {
+      execute: async (_id, input, signal) => {
         const parameters = input as { command: string; cwd?: string; timeout_ms?: number };
-        const cwd = parameters.cwd ?? "/workspace";
-        if (cwd !== "/workspace" && !cwd.startsWith("/workspace/"))
-          throw new Error("VM working directory must be inside /workspace");
-        return result(await vm.exec(parameters.command, cwd, parameters.timeout_ms ?? 30_000));
+        const cwd = workspacePath(parameters.cwd ?? "/workspace");
+        return result(
+          await vm.exec(parameters.command, cwd, parameters.timeout_ms ?? 30_000, signal),
+        );
       },
     },
     {

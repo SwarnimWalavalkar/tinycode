@@ -27,13 +27,13 @@ export class CloudflareSandboxVm implements VmRuntime {
     return snapshot;
   }
 
-  async start() {
-    await this.sandbox().exec("mkdir -p /workspace", { timeout: 15_000 });
+  async start(signal?: AbortSignal) {
+    await this.sandbox().exec("mkdir -p /workspace", { timeout: 15_000, signal });
     return this.used("ready");
   }
 
-  async exec(command: string, cwd: string, timeout: number) {
-    const result = await this.sandbox().exec(command, { cwd, timeout });
+  async exec(command: string, cwd: string, timeout: number, signal?: AbortSignal) {
+    const result = await this.sandbox().exec(command, { cwd, timeout, signal });
     this.used("ready");
     return {
       success: result.success,

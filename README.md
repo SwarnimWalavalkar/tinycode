@@ -63,7 +63,7 @@ Projectless tasks appear under **Scratchpad** in the sidebar. Each has its own p
 
 ## Cloudflare durable agent
 
-The optional [`packages/cloudflare-agent`](packages/cloudflare-agent/README.md) workspace deploys a Worker with one `DurablePiAgent` Durable Object per Tinycode task. The DO owns the Pi SDK agent loop, serialized conversation history in SQLite, model calls, and four VM tools: `vm_start`, `vm_exec`, `vm_status`, and `vm_destroy`. A same-ID Cloudflare Sandbox container is created only when the agent uses it.
+The optional [`packages/cloudflare-agent`](packages/cloudflare-agent/README.md) workspace deploys a Worker with one `DurablePiAgent` Durable Object per Tinycode task. The DO owns the Pi SDK agent loop, bounded-chunk conversation history in SQLite, model calls, and four VM tools: `vm_start`, `vm_exec`, `vm_status`, and `vm_destroy`. A same-ID Cloudflare Sandbox container is created only when the agent uses it.
 
 The OpenAI API key stays in the Worker environment and is not copied into the VM. Tinycode's Node server authenticates to the Worker with a separate transport token:
 

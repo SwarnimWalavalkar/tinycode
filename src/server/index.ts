@@ -512,14 +512,20 @@ server.listen(port, host, () => {
   if (devOrigin) console.log(`Development URL · ${devOrigin}/`);
   void refreshProviders().then(() => titles.recover());
 });
-function shutdown() {
-  void titles.dispose();
-  runtime.dispose();
+let shuttingDown = false;
+async function shutdown() {
+  if (shuttingDown) return;
+  shuttingDown = true;
+  const forcedExit = setTimeout(() => process.exit(0), 20_000);
+  forcedExit.unref();
+  await Promise.allSettled([titles.dispose(), runtime.dispose()]);
   terminals.dispose();
   for (const ws of peers.keys()) ws.close();
   wss.close();
-  server.close(() => process.exit(0));
-  setTimeout(() => process.exit(0), 3000).unref();
+  server.close(() => {
+    clearTimeout(forcedExit);
+    process.exit(0);
+  });
 }
-process.on("SIGINT", shutdown);
-process.on("SIGTERM", shutdown);
+process.on("SIGINT", () => void shutdown());
+process.on("SIGTERM", () => void shutdown());

@@ -8,6 +8,19 @@ const MAX_EVENT_LINE = 1024 * 1024;
 export async function createCloudflare({ task, sink, command }: AdapterContext): Promise<AdapterSession> {
   const rows = new Map<string, string>();
   let active: AbortController | undefined;
+  let stopping: Promise<void> | undefined;
+
+  const stopRemote = () => {
+    stopping ??= (async () => {
+      const response = await cloudflareFetch(
+        command,
+        `/v1/agents/${encodeURIComponent(task.id)}/interrupt`,
+        { method: "POST", signal: AbortSignal.timeout(15_000) },
+      );
+      if (!response.ok) throw await cloudflareResponseError(response);
+    })();
+    return stopping;
+  };
 
   const handle = (event: CloudflareAgentEvent) => {
     if (event.type === "session") {
@@ -73,7 +86,9 @@ export async function createCloudflare({ task, sink, command }: AdapterContext):
     async run(text, images) {
       if (!task.model) throw new Error("Choose a model for the Cloudflare agent");
       rows.clear();
-      active = new AbortController();
+      stopping = undefined;
+      const controller = new AbortController();
+      active = controller;
       const request: CloudflareRunRequest = {
         text,
         model: task.model,
@@ -85,11 +100,23 @@ export async function createCloudflare({ task, sink, command }: AdapterContext):
           await cloudflareFetch(command, `/v1/agents/${encodeURIComponent(task.id)}/run`, {
             method: "POST",
             body: JSON.stringify(request),
-            signal: active.signal,
+            signal: controller.signal,
           }),
         );
+      } catch (error) {
+        controller.abort();
+        try {
+          await stopRemote();
+        } catch (stopError) {
+          const message = error instanceof Error ? error.message : String(error);
+          const stopMessage = stopError instanceof Error ? stopError.message : String(stopError);
+          throw new Error(`${message}; failed to stop the remote agent: ${stopMessage}`, {
+            cause: error,
+          });
+        }
+        throw error;
       } finally {
-        active = undefined;
+        if (active === controller) active = undefined;
       }
     },
     async steer(text, images) {
@@ -106,16 +133,13 @@ export async function createCloudflare({ task, sink, command }: AdapterContext):
     },
     async interrupt() {
       active?.abort();
-      const response = await cloudflareFetch(
-        command,
-        `/v1/agents/${encodeURIComponent(task.id)}/interrupt`,
-        { method: "POST", signal: AbortSignal.timeout(15_000) },
-      );
-      if (!response.ok) throw await cloudflareResponseError(response);
+      await stopRemote();
     },
-    dispose() {
-      active?.abort();
-      active = undefined;
+    async dispose() {
+      const controller = active;
+      controller?.abort();
+      if (controller) await stopRemote();
+      if (active === controller) active = undefined;
     },
   };
 }

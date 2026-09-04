@@ -18,8 +18,17 @@ describe("VM tools", () => {
     const tool = createVmTools(vm).find((tool) => tool.name === "vm_exec")!;
     await expect(tool.execute("call", { command: "pwd", cwd: "/etc" }, undefined as never))
       .rejects.toThrow("inside /workspace");
+    await expect(
+      tool.execute("call", { command: "pwd", cwd: "/workspace/../etc" }, undefined as never),
+    ).rejects.toThrow("inside /workspace");
+    await tool.execute(
+      "call",
+      { command: "pwd", cwd: "/workspace/project/../src" },
+      undefined as never,
+    );
     await tool.execute("call", { command: "pwd" }, undefined as never);
-    expect(vm.exec).toHaveBeenCalledWith("pwd", "/workspace", 30_000);
+    expect(vm.exec).toHaveBeenCalledWith("pwd", "/workspace/src", 30_000, undefined);
+    expect(vm.exec).toHaveBeenCalledWith("pwd", "/workspace", 30_000, undefined);
   });
 
   it("exposes explicit start, status, and destructive cleanup", () => {

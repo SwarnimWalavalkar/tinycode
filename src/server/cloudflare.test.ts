@@ -1,7 +1,7 @@
 import { afterEach, describe, expect, test, vi } from "vitest";
 import { createCloudflare } from "./adapters/cloudflare.js";
 import { probeProviders } from "./adapters/index.js";
-import { cloudflareModels } from "./adapters/cloudflare-client.js";
+import { cloudflareAgentUrl, cloudflareModels } from "./adapters/cloudflare-client.js";
 import type { Sink } from "./adapters/types.js";
 import type { Task } from "../shared/contracts.js";
 
@@ -143,5 +143,57 @@ describe("Cloudflare agent adapter", () => {
       dataDir: "/unused",
     });
     await expect(session.run("again", [])).rejects.toThrow("This agent is already running");
+  });
+
+  test("rejects Pi provider failures and waits for the remote interrupt", async () => {
+    vi.stubEnv("TINYCODE_CLOUDFLARE_AGENT_TOKEN", "transport-secret");
+    let stopped = false;
+    let releaseStop!: () => void;
+    const stopGate = new Promise<void>((resolve) => {
+      releaseStop = resolve;
+    });
+    const fetch = vi.fn(async (input: string | URL | Request) => {
+      const url = String(input);
+      if (url.endsWith("/run"))
+        return new Response(
+          `${JSON.stringify({ type: "session", sessionId: "do-id", model: "openai/gpt-5.4" })}\n${JSON.stringify({ type: "error", message: "provider failed" })}\n`,
+          { status: 200 },
+        );
+      if (url.endsWith("/interrupt")) {
+        await stopGate;
+        stopped = true;
+        return Response.json({ ok: true });
+      }
+      return new Response("not found", { status: 404 });
+    });
+    vi.stubGlobal("fetch", fetch);
+    const session = await createCloudflare({
+      task: task(),
+      sink: sink(),
+      command: base,
+      dataDir: "/unused",
+    });
+
+    let settled = false;
+    const run = session.run("fail", []).finally(() => {
+      settled = true;
+    });
+    await vi.waitFor(() => expect(fetch).toHaveBeenCalledTimes(2));
+    expect(settled).toBe(false);
+    releaseStop();
+    await expect(run).rejects.toThrow("provider failed");
+    expect(stopped).toBe(true);
+    expect(fetch).toHaveBeenCalledTimes(2);
+  });
+
+  test("never sends the transport token to a plaintext endpoint", async () => {
+    vi.stubEnv("TINYCODE_CLOUDFLARE_AGENT_URL", "http://agent.example.test");
+    vi.stubEnv("TINYCODE_CLOUDFLARE_AGENT_TOKEN", "transport-secret");
+    const fetch = vi.fn();
+    vi.stubGlobal("fetch", fetch);
+
+    expect(() => cloudflareAgentUrl()).toThrow("HTTPS origin");
+    await expect(cloudflareModels("http://agent.example.test")).rejects.toThrow("HTTPS origin");
+    expect(fetch).not.toHaveBeenCalled();
   });
 });

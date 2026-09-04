@@ -11,11 +11,15 @@ Tinycode UI -> Tinycode Node adapter -> Worker -> one DurablePiAgent DO per task
                                                    +-- VM tools -> same-ID Cloudflare Sandbox
 ```
 
-The Durable Object owns the Pi agent, serialized turns, conversation state, and the decision to use
+The Durable Object owns the Pi agent, serialized turns, chunked SQLite conversation state, and the decision to use
 the VM. The Sandbox is a separate Cloudflare Container that starts lazily on `vm_start` or `vm_exec`,
 sleeps after ten idle minutes, and can be permanently removed with `vm_destroy`. Its filesystem is
 ephemeral across that idle sleep; the DO's SQLite conversation history is durable. The model credential
 stays in the Worker and is never copied into the Sandbox.
+
+Tinycode accepts only an HTTPS Worker endpoint before attaching the transport token. Canceling or
+interrupting a local turn aborts the Pi run and its active Sandbox command, then waits for the Durable
+Object to settle before Tinycode releases the local run.
 
 ## Configure
 
