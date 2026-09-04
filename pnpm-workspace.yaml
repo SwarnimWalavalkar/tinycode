@@ -1,6 +1,11 @@
 packages:
   - packages/*
 
+overrides:
+  '@smithy/fetch-http-handler': 5.7.2
+  '@smithy/node-http-handler': 4.11.3
+  '@smithy/types': 4.17.2
+
 allowBuilds:
   better-sqlite3: true
   esbuild: true
