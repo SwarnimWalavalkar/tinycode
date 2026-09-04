@@ -127,7 +127,9 @@ export class Runtime {
     const provider = this.providers.find((p) => p.id === task.provider);
     if (!provider?.available)
       throw new Error(
-        `${adapters[task.provider].name} is not ready. Check its login on the server, then refresh harnesses.`,
+        task.provider === "cloudflare"
+          ? "Cloudflare is not ready. Check its Worker URL, transport token, and health, then refresh."
+          : `${adapters[task.provider].name} is not ready. Check its login on the server, then refresh harnesses.`,
       );
     if (mode === "steer" && !provider.capabilities.steer)
       throw new Error("This harness does not support steering");
@@ -351,7 +353,7 @@ export class Runtime {
         this.sessions.set(task.id, session);
       }
       if (this.interrupted.has(task.id)) {
-        session.dispose();
+        await session.dispose();
         this.sessions.delete(task.id);
         return;
       }
@@ -373,7 +375,7 @@ export class Runtime {
         sink.add("error", error instanceof Error ? error.message : String(error));
         sink.status("failed");
       }
-      this.sessions.get(task.id)?.dispose();
+      await this.sessions.get(task.id)?.dispose();
       this.sessions.delete(task.id);
     } finally {
       this.acceptingSteers.delete(task.id);
@@ -430,7 +432,7 @@ export class Runtime {
     } finally {
       // A new send can arrive after the old run ends but before its interrupt
       // acknowledgement. Dispose only the session we actually stopped.
-      session?.dispose();
+      await session?.dispose();
     }
   }
   answer(taskId: string, id: string, answer: { allow: boolean; text?: string }) {
@@ -442,10 +444,12 @@ export class Runtime {
     this.tasks();
     this.publish({ type: "approvals", taskId, approvals: this.approvals(taskId) }, taskId);
   }
-  dispose() {
+  async dispose() {
     this.closing = true;
     for (const id of this.runs) this.interrupted.add(id);
-    for (const session of this.sessions.values()) session.dispose();
+    const sessions = [...this.sessions.values()];
+    this.sessions.clear();
+    await Promise.allSettled(sessions.map((session) => session.dispose()));
     for (const [id] of this.streams) this.flush(id);
   }
 }

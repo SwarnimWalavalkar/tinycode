@@ -3,12 +3,16 @@ import type { ModelCatalog, ModelOption, ProviderInfo } from "../../shared/contr
 import { modelLabel } from "../../shared/models.js";
 import { JsonLines } from "./jsonl.js";
 import type { Native } from "./types.js";
+import { cloudflareModels } from "./cloudflare-client.js";
 
 async function discover(provider: ProviderInfo, cwd: string): Promise<ModelCatalog> {
   if (!provider.available)
     throw new Error(
-      `${provider.name} is not ready. Check its login on the server, then refresh harnesses.`,
+      provider.id === "cloudflare"
+        ? "Cloudflare is not ready. Check its Worker URL, transport token, and health, then refresh."
+        : `${provider.name} is not ready. Check its login on the server, then refresh harnesses.`,
     );
+  if (provider.id === "cloudflare") return cloudflareModels(provider.command);
   if (provider.id === "claude") {
     let release!: () => void;
     const gate = new Promise<void>((resolve) => {

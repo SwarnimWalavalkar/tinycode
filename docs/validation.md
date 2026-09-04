@@ -1,5 +1,18 @@
 # v0 validation
 
+## Cloudflare durable agent · September 4, 2026
+
+The monorepo now includes an optional Cloudflare Worker package. The production route maps each Tinycode task ID to one `DurablePiAgent` Durable Object, persists Pi messages in bounded DO SQLite chunks, authenticates the Node adapter with a Worker transport token over HTTPS, and exposes a same-ID Cloudflare Sandbox through `vm_start`, `vm_exec`, `vm_status`, and `vm_destroy`. The VM boundary has both a Cloudflare adapter and an in-memory test double. OpenAI is the only configured Pi provider in this first cut.
+
+- `pnpm run check` passed 109 tests across 15 root test files, followed by the Cloudflare package typecheck and eleven focused tests. The Cloudflare tests cover authenticated health/model discovery, task-scoped NDJSON content and tool projection, failed-row cleanup, stream cancellation, provider failure and remote interruption, HTTPS-only credential transport and URL redaction, multi-message Pi event identity, Unicode-safe large image-bearing history split across bounded SQLite rows, VM path normalization, workspace-start failure, process-group termination on interrupt and timeout, completed-process races, and permanent VM destruction.
+- `pnpm run build` passed the production UI build. `pnpm run build:cloudflare` passed Wrangler's dry-run bundle and built the pinned `cloudflare/sandbox:0.12.4` Docker image; Wrangler recognized both Durable Object bindings and the container definition.
+- A fresh frozen pnpm install ran and passed `workerd`'s platform validation hook. `wrangler dev` then built the Sandbox image, started the Worker through local `workerd`, and served an authenticated `GET /v1/health` with the expected protocol. This validates local Worker startup without claiming a remote deployment.
+- CI has a dedicated Ubuntu job for that Worker and Sandbox-image build in addition to the existing cross-package checks. Dependency versions and install-script decisions are explicit so pnpm's supply-chain checks apply to the new workspace.
+- `pnpm run test:smoke` passed the existing disposable production HTTP/WebSocket, filesystem, real PTY, worktree, Git, image-upload, and authentication paths.
+- A production browser run used a controlled authenticated Worker endpoint through the real Tinycode Node adapter. Cloudflare appeared as the only ready option with its remote model and thinking catalog, the composer showed the durable-agent/managed-VM boundary, task creation produced a projectless task, and the completed transcript projected thought, `vm_exec`, and final response events. Local terminal and file controls were absent for that task. Light and dark layouts were inspected; browser warnings and errors were empty.
+
+No Worker was deployed to a Cloudflare account and no live provider request or Cloudflare Sandbox command was executed. DO persistence, container wake/sleep behavior, billing limits, and remote-network behavior therefore remain deployment validation items. The documented first-cut VM filesystem is ephemeral after an idle Sandbox sleep, and third-party credentials are not injected into it.
+
 ## Shared explorer design and test page · September 3, 2026
 
 - The standalone `/explorer.html` uses the same Trees, code preview, and Diffs components as the task sidebar, with an in-memory sample workspace. It is a test surface; the main product keeps the conversation primary and offers a resizable side panel with temporary expansion.

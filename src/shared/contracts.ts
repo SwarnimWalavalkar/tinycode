@@ -1,6 +1,6 @@
 import type { PermissionMode } from "./permissions.js";
 
-export type ProviderId = "codex" | "claude" | "pi";
+export type ProviderId = "codex" | "claude" | "pi" | "cloudflare";
 export type TaskStatus = "idle" | "running" | "waiting" | "complete" | "failed" | "interrupted";
 
 export interface ProviderCapabilities {

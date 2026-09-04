@@ -3,6 +3,7 @@ import type { TitleSuggestion } from "../../shared/titles.js";
 import { taskTitle } from "../../shared/titles.js";
 import { JsonLines } from "./jsonl.js";
 import { textContent, type Native } from "./types.js";
+import { cloudflareTitle as requestCloudflareTitle } from "./cloudflare-client.js";
 
 export interface TitleContext {
   command: string;
@@ -170,6 +171,12 @@ async function rpcTitle(context: TitleContext, kind: "codex" | "pi") {
 }
 export const codexTitle: TitleGenerator = (context) => rpcTitle(context, "codex");
 export const piTitle: TitleGenerator = (context) => rpcTitle(context, "pi");
+export const cloudflareTitle: TitleGenerator = async (context) =>
+  requestCloudflareTitle(
+    context.command,
+    { prompt: context.prompt, model: context.taskModel },
+    context.signal,
+  );
 export const claudeTitle: TitleGenerator = async (context) => {
   context.signal.throwIfAborted();
   const model = process.env.TINYCODE_CLAUDE_TITLE_MODEL ?? "haiku";

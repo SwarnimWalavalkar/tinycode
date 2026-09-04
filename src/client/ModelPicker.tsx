@@ -284,8 +284,10 @@ export default function ModelPicker({
                   {checking
                     ? "Checking harness authentication…"
                     : taskId
-                      ? "Sign in to this task’s harness on the server, then refresh."
-                      : "Sign in to Codex, Claude Code, or a Pi provider on the server, then refresh."}
+                      ? provider === "cloudflare"
+                        ? "Check the Cloudflare Worker URL, transport token, and readiness, then refresh."
+                        : "Sign in to this task’s harness on the server, then refresh."
+                      : "Sign in to a local harness or configure the Cloudflare Worker, then refresh."}
                 </p>
               )}
               {available &&

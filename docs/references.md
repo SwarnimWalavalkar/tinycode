@@ -1,6 +1,6 @@
 # What Tinycode takes from its references
 
-Tinycode is a browser interface around existing coding harnesses. Its first proof is small: useful work through three harnesses, a browser that can disconnect without stopping work, and an interface that stays responsive during output. The server must be equally usable on a laptop or a remote development machine.
+Tinycode is a browser interface around existing coding harnesses and one optional hosted runtime. Its first proof is small: useful work through multiple execution backends, a browser that can disconnect without stopping work, and an interface that stays responsive during output. The server must be equally usable on a laptop or a remote development machine.
 
 This study uses the local snapshots below. Claims describe those revisions, not an independently refreshed upstream release.
 
@@ -9,6 +9,7 @@ This study uses the local snapshots below. Claims describe those revisions, not 
 | bb        | `cef44aeb13e2d4bc545e2de22d89eebf52d9efc8` | Provider boundaries and explicit compatibility contracts            |
 | Paseo     | `fa1f01ebbcce84b3e8e27ef4f2b3473d5d7b5a33` | Client-independent execution and reconnect behavior                 |
 | T3 Code   | `70cd258d8aac43ea57494527b00bf36de3efa6c0` | A conversation-centered workspace with review and terminal surfaces |
+| nanocodex | `00c049718fa3527aefc9a0f4b4a4d2b906d7c9df` | Durable edge-owned agents with replaceable VM execution             |
 
 ## bb: preserve the harness contract
 
@@ -92,13 +93,32 @@ Source trail:
 - [`apps/web/package.json`](https://github.com/pingdotgg/t3code/blob/70cd258d8aac43ea57494527b00bf36de3efa6c0/apps/web/package.json)
 - Visual: `apps/marketing/public/updated-screenshot.webp`.
 
+## nanocodex: durable brain, leased hands
+
+Nanocodex separates the long-lived agent owner from heavyweight execution. Its Cloudflare shape keeps an agent in a Durable Object and reaches a VM backend through tools only when the work requires a real operating system. VM concerns sit behind interfaces rather than leaking Cloudflare Container calls through the agent loop. The same pattern makes a second VM provider possible without inventing a second set of agent tools.
+
+Tinycode takes that ownership boundary, not nanocodex's whole platform. `DurablePiAgent` is keyed by the existing Tinycode task ID and stores Pi messages in DO SQLite. `VmRuntime` is the narrow execution boundary, with a Cloudflare Sandbox adapter and an in-memory test double. The Node server remains the UI adapter: it authenticates to the Worker, translates an NDJSON event stream, and never receives the model key.
+
+The first cut deliberately does not adopt nanocodex's account, organization, egress-broker, VM-pool, R2 workspace, or managed-service layers. Its Cloudflare VM has no injected third-party credentials and no durable filesystem after idle sleep. Those are separate product and security decisions, not hidden behavior in a generic shell tool.
+
+**Take:** one durable owner per agent, explicit agent/VM separation, lazy VM lifecycle tools, stable task identity, and a backend-neutral VM boundary.
+
+**Defer:** credential brokering, arbitrary authenticated VM egress, durable remote workspaces, multiple VM backends, pooling, and multi-tenant account infrastructure.
+
+Source trail:
+
+- [`README.md`](https://github.com/gakonst/nanocodex/blob/00c049718fa3527aefc9a0f4b4a4d2b906d7c9df/README.md)
+- [`docs/VM.md`](https://github.com/gakonst/nanocodex/blob/00c049718fa3527aefc9a0f4b4a4d2b906d7c9df/docs/VM.md)
+- [`docs/DURABILITY.md`](https://github.com/gakonst/nanocodex/blob/00c049718fa3527aefc9a0f4b4a4d2b906d7c9df/docs/DURABILITY.md)
+- [`crates/nanocodex-tools/WORKSPACE_RUNTIME.md`](https://github.com/gakonst/nanocodex/blob/00c049718fa3527aefc9a0f4b4a4d2b906d7c9df/crates/nanocodex-tools/WORKSPACE_RUNTIME.md)
+
 ## The resulting cut
 
 The sidebar borrows the references' separation of unread activity from execution status: Paseo's `agent-manager.ts` creates attention on completion/error transitions; T3's `Sidebar.logic.ts` distinguishes unread completion from the ready state; bb's `plugin-sidebar-threads.ts` separates pending interactions from unread results. Tinycode uses a small trailing spinner while running and a blue dot for unread results or pending requests. Viewing clears unread events; pending-request indicators remain until answered. Completed tasks have no persistent checkmark.
 
-One TypeScript project. One Node server. One React/Vite client. SQLite stores tasks and their display transcripts; harnesses keep their native sessions. JSON HTTP commands and a small WebSocket stream are enough. There is no LLM SDK for reasoning, tool registry, injected agent prompt, subagent scheduler, or model router.
+One TypeScript monorepo. One Node server and React/Vite client remain the local application; SQLite stores tasks and display transcripts, and local harnesses keep their native sessions. The optional Cloudflare workspace is a separate deployable with Pi's agent core, a deliberately small VM tool registry, and one Durable Object per task. It does not alter the three local adapter contracts.
 
-Three native adapters are worth their small maintenance cost because converting everything into an artificial common protocol would either hide native behavior or recreate part of a harness. Claude uses the [official Agent SDK](https://code.claude.com/docs/en/agent-sdk/typescript) as a control interface to Claude Code. Codex and Pi speak their own documented native protocols. The adapter's job ends at translation and lifecycle.
+Three native adapters are worth their small maintenance cost because converting everything into an artificial common protocol would either hide native behavior or recreate part of a harness. Claude uses the [official Agent SDK](https://code.claude.com/docs/en/agent-sdk/typescript) as a control interface to Claude Code. Codex and local Pi speak their own documented native protocols. The fourth adapter translates the explicitly versioned Cloudflare event stream; Pi owns that hosted agent loop.
 
 Performance choices are concrete: initial JavaScript stays below 100 KB gzip, terminal and Markdown code are lazy, transcript pages contain at most 120 items, token updates coalesce every 40 ms and notify only the affected row, and terminal bytes never enter React state. These are v0 boundaries, not claims that responsiveness at every workload has already been proven.
 

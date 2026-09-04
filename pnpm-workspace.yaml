@@ -1,7 +1,18 @@
+packages:
+  - packages/*
+
+overrides:
+  '@smithy/fetch-http-handler': 5.7.2
+  '@smithy/node-http-handler': 4.11.3
+  '@smithy/types': 4.17.2
+
 allowBuilds:
+  '@google/genai': false
   better-sqlite3: true
   esbuild: true
   node-pty: true
+  protobufjs: false
+  workerd: true
 
 # Native install scripts need node-gyp on their own PATH. Standalone pnpm
 # installations may not provide it, and root binaries are linked too late.

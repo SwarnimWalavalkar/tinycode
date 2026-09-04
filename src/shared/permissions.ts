@@ -111,12 +111,22 @@ export const permissionOptions: Record<ProviderId, readonly PermissionOption[]> 
       icon: "deny",
     },
   ],
+  cloudflare: [
+    {
+      id: "native",
+      label: "Managed VM tools",
+      description:
+        "Run the agent in its Durable Object. It may start and manage its isolated Linux VM on demand.",
+      icon: "auto",
+    },
+  ],
 };
 
 export const defaultPermissionMode: Record<ProviderId, PermissionMode> = {
   codex: "workspace-write",
   claude: "default",
   pi: "native",
+  cloudflare: "native",
 };
 
 export function parsePermissionMode(provider: ProviderId, value: unknown): PermissionMode {

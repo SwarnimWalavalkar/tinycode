@@ -172,6 +172,23 @@ describe("projectless tasks", () => {
         branch: "not-allowed",
       }),
     ).rejects.toThrow("Worktrees require a Git project");
+    await expect(
+      createTask(store, root, {
+        projectId: "p",
+        provider: "cloudflare",
+        model: "openai/gpt-5.4",
+        thinkingLevel: "medium",
+        branch: null,
+      }),
+    ).rejects.toThrow("projectless VM workspace");
+    const cloudTask = await createTask(store, root, {
+      projectId: null,
+      provider: "cloudflare",
+      model: "openai/gpt-5.4",
+      thinkingLevel: "medium",
+      branch: null,
+    });
+    expect(cloudTask).toMatchObject({ provider: "cloudflare", projectId: null });
     await git(task.cwd, ["init"]);
     expect((await gitStatus(task.cwd, true)).files).toEqual([{ path: "note.txt", status: "??" }]);
     store.db.close();
