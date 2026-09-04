@@ -7,9 +7,12 @@ overrides:
   '@smithy/types': 4.17.2
 
 allowBuilds:
+  '@google/genai': false
   better-sqlite3: true
   esbuild: true
   node-pty: true
+  protobufjs: false
+  workerd: false
 
 # Native install scripts need node-gyp on their own PATH. Standalone pnpm
 # installations may not provide it, and root binaries are linked too late.
