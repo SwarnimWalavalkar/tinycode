@@ -281,7 +281,8 @@ async function createTitle(env: Env, request: CloudflareTitleRequest) {
   const modelId =
     models.find(
       (model) =>
-        model.id.startsWith(`${provider}/`) && /(?:mini|nano|small|luna|flash)/i.test(model.id),
+        (!provider || model.id.startsWith(`${provider}/`)) &&
+        /(?:mini|nano|small|luna|flash)/i.test(model.id),
     )?.id ?? defaultModelId(env);
   const agent = createPiAgent(env, {
     sessionId: crypto.randomUUID(),

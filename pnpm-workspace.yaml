@@ -12,7 +12,7 @@ allowBuilds:
   esbuild: true
   node-pty: true
   protobufjs: false
-  workerd: false
+  workerd: true
 
 # Native install scripts need node-gyp on their own PATH. Standalone pnpm
 # installations may not provide it, and root binaries are linked too late.

@@ -10,6 +10,16 @@ export async function createCloudflare({ task, sink, command }: AdapterContext):
   let active: AbortController | undefined;
   let stopping: Promise<void> | undefined;
 
+  const finishControlRequest = async (response: Response) => {
+    if (!response.ok) throw await cloudflareResponseError(response);
+    await response.body?.cancel();
+  };
+
+  const failOpenRows = () => {
+    for (const id of rows.values()) sink.patch(id, { status: "failed" });
+    rows.clear();
+  };
+
   const stopRemote = () => {
     stopping ??= (async () => {
       const response = await cloudflareFetch(
@@ -17,7 +27,7 @@ export async function createCloudflare({ task, sink, command }: AdapterContext):
         `/v1/agents/${encodeURIComponent(task.id)}/interrupt`,
         { method: "POST", signal: AbortSignal.timeout(15_000) },
       );
-      if (!response.ok) throw await cloudflareResponseError(response);
+      await finishControlRequest(response);
     })();
     return stopping;
   };
@@ -34,6 +44,7 @@ export async function createCloudflare({ task, sink, command }: AdapterContext):
     } else if (event.type === "content.end") {
       const id = rows.get(event.id);
       if (id) sink.patch(id, { text: event.text, status: "complete" });
+      rows.delete(event.id);
     } else if (event.type === "tool.start") {
       rows.set(
         event.id,
@@ -46,6 +57,7 @@ export async function createCloudflare({ task, sink, command }: AdapterContext):
     } else if (event.type === "tool.end") {
       const id = rows.get(event.id);
       if (id) sink.patch(id, { text: event.output, status: event.isError ? "failed" : "complete" });
+      rows.delete(event.id);
     } else if (event.type === "notice") sink.add("notice", event.message);
     else if (event.type === "error") throw new Error(event.message);
   };
@@ -57,29 +69,40 @@ export async function createCloudflare({ task, sink, command }: AdapterContext):
     const decoder = new TextDecoder();
     let pending = "";
     let done = false;
-    for (;;) {
-      const next = await reader.read();
-      pending += decoder.decode(next.value, { stream: !next.done });
-      if (pending.length > MAX_EVENT_LINE && !pending.includes("\n"))
-        throw new Error("Cloudflare agent event exceeded the size limit");
-      const lines = pending.split("\n");
-      pending = lines.pop() ?? "";
-      for (const line of lines) {
-        if (!line.trim()) continue;
-        if (line.length > MAX_EVENT_LINE)
+    let streamEnded = false;
+    try {
+      for (;;) {
+        const next = await reader.read();
+        pending += decoder.decode(next.value, { stream: !next.done });
+        if (pending.length > MAX_EVENT_LINE && !pending.includes("\n"))
           throw new Error("Cloudflare agent event exceeded the size limit");
-        const event = JSON.parse(line) as CloudflareAgentEvent;
+        const lines = pending.split("\n");
+        pending = lines.pop() ?? "";
+        for (const line of lines) {
+          if (!line.trim()) continue;
+          if (line.length > MAX_EVENT_LINE)
+            throw new Error("Cloudflare agent event exceeded the size limit");
+          const event = JSON.parse(line) as CloudflareAgentEvent;
+          handle(event);
+          if (event.type === "done") done = true;
+        }
+        if (next.done) {
+          streamEnded = true;
+          break;
+        }
+      }
+      if (pending.trim()) {
+        const event = JSON.parse(pending) as CloudflareAgentEvent;
         handle(event);
         if (event.type === "done") done = true;
       }
-      if (next.done) break;
+      if (!done) throw new Error("Cloudflare agent stream ended before the turn completed");
+      if (rows.size)
+        throw new Error("Cloudflare agent completed before all streamed events were finalized");
+    } finally {
+      if (!streamEnded) await reader.cancel().catch(() => {});
+      reader.releaseLock();
     }
-    if (pending.trim()) {
-      const event = JSON.parse(pending) as CloudflareAgentEvent;
-      handle(event);
-      if (event.type === "done") done = true;
-    }
-    if (!done) throw new Error("Cloudflare agent stream ended before the turn completed");
   }
 
   return {
@@ -105,6 +128,7 @@ export async function createCloudflare({ task, sink, command }: AdapterContext):
         );
       } catch (error) {
         controller.abort();
+        failOpenRows();
         try {
           await stopRemote();
         } catch (stopError) {
@@ -129,7 +153,7 @@ export async function createCloudflare({ task, sink, command }: AdapterContext):
           signal: AbortSignal.timeout(15_000),
         },
       );
-      if (!response.ok) throw await cloudflareResponseError(response);
+      await finishControlRequest(response);
     },
     async interrupt() {
       active?.abort();

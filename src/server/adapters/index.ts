@@ -45,10 +45,7 @@ export function pendingProviders(): ProviderInfo[] {
   return (Object.keys(adapters) as ProviderId[]).map((id) => ({
     id,
     name: adapters[id].name,
-    command:
-      id === "cloudflare"
-        ? process.env.TINYCODE_CLOUDFLARE_AGENT_URL ?? ""
-        : process.env[`TINYCODE_${id.toUpperCase()}_BIN`] ?? id,
+    command: id === "cloudflare" ? pendingCloudflareCommand() : process.env[`TINYCODE_${id.toUpperCase()}_BIN`] ?? id,
     available: false,
     readiness: "checking",
     capabilities: {
@@ -59,6 +56,14 @@ export function pendingProviders(): ProviderInfo[] {
       subagents: id === "pi" ? "events" : id === "cloudflare" ? "none" : "native",
     },
   }));
+}
+
+function pendingCloudflareCommand(): string {
+  try {
+    return cloudflareAgentUrl() ?? "";
+  } catch {
+    return "";
+  }
 }
 export async function probeProviders(
   cwd: string,

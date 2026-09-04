@@ -1,6 +1,6 @@
 import { afterEach, describe, expect, test, vi } from "vitest";
 import { createCloudflare } from "./adapters/cloudflare.js";
-import { probeProviders } from "./adapters/index.js";
+import { pendingProviders, probeProviders } from "./adapters/index.js";
 import { cloudflareAgentUrl, cloudflareModels } from "./adapters/cloudflare-client.js";
 import type { Sink } from "./adapters/types.js";
 import type { Task } from "../shared/contracts.js";
@@ -142,7 +142,11 @@ describe("Cloudflare agent adapter", () => {
       command: base,
       dataDir: "/unused",
     });
-    await expect(session.run("again", [])).rejects.toThrow("This agent is already running");
+    const error = await session.run("again", []).catch((caught) => caught as Error);
+    if (!(error instanceof Error)) throw new Error("Expected the Cloudflare run to fail");
+    expect(error.message).toContain("This agent is already running");
+    expect(error.message).not.toContain("transport-secret");
+    expect(error.message).not.toContain(base);
   });
 
   test("rejects Pi provider failures and waits for the remote interrupt", async () => {
@@ -156,7 +160,7 @@ describe("Cloudflare agent adapter", () => {
       const url = String(input);
       if (url.endsWith("/run"))
         return new Response(
-          `${JSON.stringify({ type: "session", sessionId: "do-id", model: "openai/gpt-5.4" })}\n${JSON.stringify({ type: "error", message: "provider failed" })}\n`,
+          `${JSON.stringify({ type: "session", sessionId: "do-id", model: "openai/gpt-5.4" })}\n${JSON.stringify({ type: "content.start", id: "answer", kind: "assistant" })}\n${JSON.stringify({ type: "error", message: "provider failed" })}\n`,
           { status: 200 },
         );
       if (url.endsWith("/interrupt")) {
@@ -167,9 +171,10 @@ describe("Cloudflare agent adapter", () => {
       return new Response("not found", { status: 404 });
     });
     vi.stubGlobal("fetch", fetch);
+    const output = sink();
     const session = await createCloudflare({
       task: task(),
-      sink: sink(),
+      sink: output,
       command: base,
       dataDir: "/unused",
     });
@@ -184,6 +189,39 @@ describe("Cloudflare agent adapter", () => {
     await expect(run).rejects.toThrow("provider failed");
     expect(stopped).toBe(true);
     expect(fetch).toHaveBeenCalledTimes(2);
+    expect(output.patch).toHaveBeenCalledWith("assistant-row", { status: "failed" });
+  });
+
+  test("cancels a partially consumed event stream after a protocol error", async () => {
+    vi.stubEnv("TINYCODE_CLOUDFLARE_AGENT_TOKEN", "transport-secret");
+    let cancelled = false;
+    const body = new ReadableStream<Uint8Array>({
+      start(controller) {
+        controller.enqueue(
+          new TextEncoder().encode(`${JSON.stringify({ type: "error", message: "bad event" })}\n`),
+        );
+      },
+      cancel() {
+        cancelled = true;
+      },
+    });
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async (input: string | URL | Request) =>
+        String(input).endsWith("/interrupt")
+          ? Response.json({ ok: true })
+          : new Response(body, { status: 200 }),
+      ),
+    );
+    const session = await createCloudflare({
+      task: task(),
+      sink: sink(),
+      command: base,
+      dataDir: "/unused",
+    });
+
+    await expect(session.run("fail", [])).rejects.toThrow("bad event");
+    expect(cancelled).toBe(true);
   });
 
   test("never sends the transport token to a plaintext endpoint", async () => {
@@ -195,5 +233,17 @@ describe("Cloudflare agent adapter", () => {
     expect(() => cloudflareAgentUrl()).toThrow("HTTPS origin");
     await expect(cloudflareModels("http://agent.example.test")).rejects.toThrow("HTTPS origin");
     expect(fetch).not.toHaveBeenCalled();
+  });
+
+  test("never publishes an invalid configured Worker URL to browser clients", async () => {
+    vi.stubEnv(
+      "TINYCODE_CLOUDFLARE_AGENT_URL",
+      "https://username:password@agent.example.test/?access_token=secret",
+    );
+
+    expect(pendingProviders().find((provider) => provider.id === "cloudflare")?.command).toBe("");
+    await expect(probeProviders("/unused")).resolves.toContainEqual(
+      expect.objectContaining({ id: "cloudflare", command: "", readiness: "error" }),
+    );
   });
 });

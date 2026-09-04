@@ -83,6 +83,8 @@ describe("native harness readiness", () => {
     vi.stubEnv("TINYCODE_CODEX_BIN", join(cwd, "missing-codex"));
     vi.stubEnv("TINYCODE_PI_BIN", join(cwd, "missing-pi"));
     vi.stubEnv("TINYCODE_CLAUDE_BIN", provider.command);
+    vi.stubEnv("TINYCODE_CLOUDFLARE_AGENT_URL", "");
+    vi.stubEnv("TINYCODE_CLOUDFLARE_AGENT_TOKEN", "");
     let providers = await probeProviders(cwd);
     expect(providers.map((p) => p.available)).toEqual([false, false, false, false]);
     expect(providers.find((p) => p.id === "claude")?.readiness).toBe("unauthenticated");

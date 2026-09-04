@@ -905,7 +905,6 @@ export function App() {
   }, [selectedProject]);
   useEffect(() => {
     if (provider !== "cloudflare") return;
-    setSelectedProject("");
     setBranch("");
     setWorktree(false);
     setOptions(false);
@@ -929,14 +928,18 @@ export function App() {
       }
       if ((e.metaKey || e.ctrlKey) && e.key === "j") {
         e.preventDefault();
-        if (getShell().activeTaskId) setTerminal((s) => !s);
+        const state = getShell();
+        const active = state.tasks.find((candidate) => candidate.id === state.activeTaskId);
+        if (active && active.provider !== "cloudflare") setTerminal((s) => !s);
       }
       if (e.key === "Escape") setShell({ error: null });
     }
     window.addEventListener("keydown", shortcut);
     return () => window.removeEventListener("keydown", shortcut);
   }, []);
-  const project = shell.projects.find((p) => p.id === (task ? task.projectId : selectedProject));
+  const project = shell.projects.find(
+    (p) => p.id === (task ? task.projectId : provider === "cloudflare" ? null : selectedProject),
+  );
   const projectlessTasks = shell.tasks.filter((t) => t.projectId === null);
   useEffect(() => {
     if (!shell.connected) return;
@@ -964,7 +967,7 @@ export function App() {
     if (createAttempt.current?.key !== key) createAttempt.current = null;
     if (!createAttempt.current) {
       const newTask = await post<Task>("/tasks", {
-        projectId: project?.id ?? null,
+        projectId: provider === "cloudflare" ? null : (project?.id ?? null),
         provider,
         model: model.trim() || undefined,
         thinkingLevel,
@@ -1273,7 +1276,6 @@ export function App() {
                           projectId={project?.id}
                           onChange={(id, model) => {
                             if (id !== provider) setPermissionMode(defaultPermissionMode[id]);
-                            if (id === "cloudflare") chooseProject("");
                             setProvider(id);
                             setModel(model);
                             setThinkingLevel(null);

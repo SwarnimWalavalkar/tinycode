@@ -226,9 +226,9 @@ Node server: tasks + SQLite + adapter lifecycle + local filesystem/Git
        ├── Claude Agent SDK → installed Claude Code
        ├── Pi RPC (JSONL)
        └── HTTPS/NDJSON → Cloudflare Worker
-                            └── one DurablePiAgent DO per task
-                                  ├── Pi SDK loop + SQLite history
-                                  └── VM tools → same-ID Sandbox container
+            └── one DurablePiAgent DO per task
+                 ├── Pi SDK loop + SQLite history
+                 └── VM tools → same-ID Sandbox container
 ```
 
 `src/shared/contracts.ts` and `src/shared/cloudflare-agent.ts` are the small wire contracts. `src/server/adapters` translates native harnesses and the Cloudflare event stream into one UI projection. `runtime.ts` owns task delivery and coalesces display updates. Local harnesses own their agent decisions; the optional `packages/cloudflare-agent` runtime delegates them to Pi's agent core. `src/client/state.ts` keeps token updates scoped to individual rows. Terminal output bypasses React entirely.

@@ -27,12 +27,21 @@ export class CloudflareSandboxVm implements VmRuntime {
     return snapshot;
   }
 
+  private assertAvailable() {
+    if (this.readSnapshot().state === "destroyed")
+      throw new Error("This agent's VM was permanently destroyed");
+  }
+
   async start(signal?: AbortSignal) {
-    await this.sandbox().exec("mkdir -p /workspace", { timeout: 15_000, signal });
+    this.assertAvailable();
+    const result = await this.sandbox().exec("mkdir -p /workspace", { timeout: 15_000, signal });
+    if (!result.success)
+      throw new Error(`Failed to prepare the VM workspace: ${clip(result.stderr || result.stdout)}`);
     return this.used("ready");
   }
 
   async exec(command: string, cwd: string, timeout: number, signal?: AbortSignal) {
+    this.assertAvailable();
     const result = await this.sandbox().exec(command, { cwd, timeout, signal });
     this.used("ready");
     return {
