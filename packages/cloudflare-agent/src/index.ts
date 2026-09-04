@@ -62,6 +62,7 @@ function validImages(value: unknown): value is CloudflareImage[] | undefined {
 export class DurablePiAgent extends DurableObject<Env> {
   private repository: StateRepository;
   private agent: Agent | undefined;
+  private vmRuntime: CloudflareSandboxVm | undefined;
   private active = false;
   private state: StoredState;
 
@@ -83,7 +84,7 @@ export class DurablePiAgent extends DurableObject<Env> {
   }
 
   private vm() {
-    return new CloudflareSandboxVm(
+    return (this.vmRuntime ??= new CloudflareSandboxVm(
       this.env,
       this.ctx.id.toString(),
       () => this.state.vm,
@@ -91,7 +92,16 @@ export class DurablePiAgent extends DurableObject<Env> {
         this.state.vm = snapshot;
         this.persist();
       },
+    ));
+  }
+
+  private async stopRun(agent = this.agent, vm = this.vmRuntime) {
+    agent?.abort();
+    const results = await Promise.allSettled([agent?.waitForIdle(), vm?.interrupt()]);
+    const failure = results.find(
+      (result): result is PromiseRejectedResult => result.status === "rejected",
     );
+    if (failure) throw failure.reason;
   }
 
   private prepareAgent(request: CloudflareRunRequest) {
@@ -146,6 +156,8 @@ export class DurablePiAgent extends DurableObject<Env> {
       }
     };
     const projector = new AgentEventProjector();
+    const vmRuntime = this.vm();
+    const stopRun = () => this.stopRun(agent, vmRuntime);
     const unsubscribe = agent.subscribe(async (event: any) => {
       if (event.type === "message_end") this.persist();
       for (const output of projector.project(event)) await send(output);
@@ -163,12 +175,14 @@ export class DurablePiAgent extends DurableObject<Env> {
       },
       async cancel(reason) {
         canceled = true;
-        agent.abort();
-        try {
-          await reader.cancel(reason);
-        } finally {
-          await agent.waitForIdle();
-        }
+        const results = await Promise.allSettled([
+          reader.cancel(reason),
+          stopRun(),
+        ]);
+        const failure = results.find(
+          (result): result is PromiseRejectedResult => result.status === "rejected",
+        );
+        if (failure) throw failure.reason;
       },
     });
 
@@ -239,8 +253,7 @@ export class DurablePiAgent extends DurableObject<Env> {
         return json({ ok: true });
       }
       if (path === "/interrupt" && request.method === "POST") {
-        this.agent?.abort();
-        await this.agent?.waitForIdle();
+        await this.stopRun();
         this.active = false;
         this.persist();
         return json({ ok: true });

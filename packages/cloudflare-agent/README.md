@@ -18,8 +18,9 @@ ephemeral across that idle sleep; the DO's SQLite conversation history is durabl
 stays in the Worker and is never copied into the Sandbox.
 
 Tinycode accepts only an HTTPS Worker endpoint before attaching the transport token. Canceling or
-interrupting a local turn aborts the Pi run and its active Sandbox command, then waits for the Durable
-Object to settle before Tinycode releases the local run.
+interrupting a local turn aborts the Pi run, sends `SIGKILL` to the active Sandbox process group, and
+waits for process exit and the Durable Object to settle before Tinycode releases the local run. Command
+timeouts use the same managed-process path, so they do not leave a buffered `exec()` process running.
 
 ## Configure
 

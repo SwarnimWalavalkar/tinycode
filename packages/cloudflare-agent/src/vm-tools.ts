@@ -16,6 +16,7 @@ export interface VmRuntime {
     exitCode: number;
   }>;
   status(): VmSnapshot;
+  interrupt(): Promise<void>;
   destroy(): Promise<VmSnapshot>;
 }
 
