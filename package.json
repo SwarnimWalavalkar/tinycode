@@ -2,17 +2,25 @@
   "name": "tinycode",
   "version": "0.1.0-alpha.0",
   "private": true,
-  "description": "A small, portable web workspace for Codex, Claude Code, and Pi.",
+  "description": "A small, portable web workspace for Codex, Claude Code, Pi, and a Cloudflare-hosted agent.",
   "license": "MIT",
   "type": "module",
+  "workspaces": [
+    "packages/*"
+  ],
   "scripts": {
     "postinstall": "node scripts/prepare.mjs",
     "dev": "concurrently -k -n server,web -c blue,green \"tsx watch src/server/index.ts\" \"vite\"",
     "dev:server": "tsx watch src/server/index.ts",
     "dev:web": "vite",
+    "dev:cloudflare": "npm --prefix packages/cloudflare-agent run dev",
     "build": "tsc -b && vite build",
+    "build:cloudflare": "npm --prefix packages/cloudflare-agent run build",
+    "build:all": "npm run build && npm run build:cloudflare",
     "start": "NODE_ENV=production tsx src/server/index.ts",
-    "check": "tsc -b && vitest run",
+    "check": "tsc -b && vitest run src/server src/client && npm run check:cloudflare",
+    "check:cloudflare": "npm --prefix packages/cloudflare-agent run check",
+    "deploy:cloudflare": "npm --prefix packages/cloudflare-agent run deploy",
     "test:smoke": "node scripts/http-smoke.mjs && node scripts/image-http-smoke.mjs"
   },
   "dependencies": {

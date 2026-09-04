@@ -226,6 +226,9 @@
     line-height: 1;
     color: #8b7d9a;
   }
+  .provider-mark.cloudflare {
+    color: #f6821f;
+  }
 }
 
 @layer layout {
@@ -634,6 +637,34 @@
   .workspace-selector:hover {
     text-decoration: underline;
     text-underline-offset: 4px;
+  }
+  .workspace-controls.cloud-runtime {
+    gap: 9px;
+    color: var(--quiet);
+  }
+  .workspace-controls.cloud-runtime > span:last-child {
+    display: grid;
+    gap: 1px;
+  }
+  .workspace-controls.cloud-runtime strong {
+    color: var(--text);
+    font-size: 11px;
+    font-weight: 520;
+  }
+  .workspace-controls.cloud-runtime small {
+    color: var(--muted);
+    font-size: 9px;
+  }
+  .cloud-runtime-mark {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 26px;
+    height: 26px;
+    border: 1px solid color-mix(in srgb, #f6821f, transparent 65%);
+    border-radius: 8px;
+    background: color-mix(in srgb, #f6821f, transparent 92%);
+    color: #f6821f;
   }
   .controls-dot {
     font-size: 11px;
@@ -1976,7 +2007,7 @@
     position: absolute;
     bottom: calc(100% + 10px);
     left: 0;
-    width: min(340px, calc(100vw - 48px));
+    width: min(400px, calc(100vw - 48px));
     background: var(--surface);
     border: 1px solid var(--line);
     border-radius: 12px;

@@ -127,7 +127,9 @@ export class Runtime {
     const provider = this.providers.find((p) => p.id === task.provider);
     if (!provider?.available)
       throw new Error(
-        `${adapters[task.provider].name} is not ready. Check its login on the server, then refresh harnesses.`,
+        task.provider === "cloudflare"
+          ? "Cloudflare is not ready. Check its Worker URL, transport token, and health, then refresh."
+          : `${adapters[task.provider].name} is not ready. Check its login on the server, then refresh harnesses.`,
       );
     if (mode === "steer" && !provider.capabilities.steer)
       throw new Error("This harness does not support steering");

@@ -143,7 +143,11 @@ export default function PermissionsPicker({
           aria-busy={saving}
         >
           <div className="permission-heading" role="presentation">
-            {provider === "pi" ? "Which tools can Pi use?" : "How should actions be approved?"}
+            {provider === "pi"
+              ? "Which tools can Pi use?"
+              : provider === "cloudflare"
+                ? "Where can the cloud agent act?"
+                : "How should actions be approved?"}
           </div>
           {options.map((option) => {
             const OptionIcon = icons[option.icon];
