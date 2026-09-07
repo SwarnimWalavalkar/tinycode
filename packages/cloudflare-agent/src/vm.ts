@@ -26,7 +26,12 @@ export class CloudflareSandboxVm implements VmRuntime {
   ) {}
 
   private sandbox() {
-    return getSandbox(this.env.SANDBOX, this.id, {
+    // DO IDs are 64 hex characters; Sandbox names allow at most 63.
+    // Base36 preserves all 256 bits (unlike truncation) in at most 50 characters.
+    const sandboxId = /^[a-f0-9]{64}$/i.test(this.id)
+      ? `tc-${BigInt(`0x${this.id}`).toString(36)}`
+      : this.id;
+    return getSandbox(this.env.SANDBOX, sandboxId, {
       enableDefaultSession: false,
       sleepAfter: "10m",
     });
@@ -66,9 +71,12 @@ export class CloudflareSandboxVm implements VmRuntime {
           () => rejectCancelled(stopReason!),
           (failure) =>
             rejectCancelled(
-              new Error(`${stopReason!.message}; failed to terminate the VM command: ${error(failure).message}`, {
-                cause: failure,
-              }),
+              new Error(
+                `${stopReason!.message}; failed to terminate the VM command: ${error(failure).message}`,
+                {
+                  cause: failure,
+                },
+              ),
             ),
         );
       }
@@ -123,7 +131,9 @@ export class CloudflareSandboxVm implements VmRuntime {
   async start(signal?: AbortSignal) {
     const result = await this.run("mkdir -p /workspace", "/", 15_000, signal);
     if (!result.success)
-      throw new Error(`Failed to prepare the VM workspace: ${clip(result.stderr || result.stdout)}`);
+      throw new Error(
+        `Failed to prepare the VM workspace: ${clip(result.stderr || result.stdout)}`,
+      );
     return this.used("ready");
   }
 

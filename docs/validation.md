@@ -261,3 +261,36 @@ node scripts/terminal-smoke.mjs
 The additional `model-smoke.mjs`, `steering-smoke.mjs`, `title-smoke.mjs`, and `image-smoke.mjs` scripts also make real model calls. The sections above describe their scope and invocation. Use disposable data and your own authenticated harness accounts.
 
 Server restart recovery is covered at the SQLite level; resuming all three native harnesses after a server restart has not been separately exercised. Approval UI, harness interruption, and subagent projection need broader real-provider coverage. Terminal replay retains recent bytes rather than a full alternate-screen snapshot. The README records the product limits that follow from this deliberately small implementation.
+# Cloudflare browser acceptance — 2026-09-07
+
+Manually exercised the actual UI at `http://localhost:8794` using the Codex in-app
+browser, local Wrangler Durable Objects/R2, local Docker Sandbox, and live GPT OSS 120B
+inference through AI Gateway. No new regression tests were added for this pass.
+
+Task `53078a03-049f-4ccb-80c1-d97fd359466a`, renamed **Cloudflare browser acceptance — passed**,
+retains the transcript and expandable tool evidence:
+
+- Login, new task, streaming response, and a clean composer without the active prompt in the queue.
+- Automatic sandbox start: `uname -s` returned `Linux`; Python multiplication returned `42`.
+- Created and read `/workspace/acceptance.txt`, returning `ORBIT_742`.
+- Closed the browser tab during a 25-second command. Reopened it and observed `DETACHED_OK`
+  and the queued follow-up's successful file read, with the queue drained.
+- Clicked Stop during a 60-second VM command. The interrupt request completed in 111 ms;
+  the turn became interrupted without the command's completion marker as output.
+- Stopped and restarted Wrangler with the same local state. History remained visible;
+  the next model turn recalled `ORBIT_742`, called `vm_start` / `vm_status`, and ran Python
+  again, returning `56`.
+- Steered a running turn through the UI; its final response included `STEERING_RECEIVED`.
+- Generated a title suggestion and saved a manual rename through the task menu.
+- Destroyed the test-only sandbox and confirmed `vm_status` returned `destroyed`, with
+  conversation history retained. Its temporary files are disposable, not durable artifacts.
+
+The first browser attempt exposed a missing Python executable after the ID-length fix;
+the Docker image now installs Python 3, pip, and venv. The acceptance above was repeated
+with that rebuilt image. Root and Cloudflare TypeScript checks passed, and the actual
+dev command built and served the UI, Worker, and Docker image. Interrupted/failed turns
+now show their outcome in the work-summary label rather than the generic “Worked”.
+
+Scope: local developer flow only, not a deployed Cloudflare canary, long-idle wakeup,
+workspace persistence across container replacement, image inference, private-repository
+credentials, or exhaustive production reliability. The GPT OSS preset is text-only.

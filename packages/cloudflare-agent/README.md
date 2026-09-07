@@ -141,7 +141,9 @@ The v1 request-bound run/title endpoints return 410. Upgrade the local app and W
 ## VM and product boundaries
 
 The tools are `vm_start`, `vm_exec`, `vm_status`, and `vm_destroy`. A Sandbox starts lazily,
-sleeps after ten idle minutes, and can be removed explicitly. Its filesystem is **ephemeral**
+with Node, Git, Python 3, pip, and venv available in the image. Its stable sandbox name encodes
+the full Durable Object identity in base36 to fit the Sandbox SDK's 63-character limit.
+It sleeps after ten idle minutes, and can be removed explicitly. Its filesystem is **ephemeral**
 across sleep/replacement/destruction; durable conversation storage does not make workspace files
 durable. Cloud tasks are projectless, with VM tool calls and results in the transcript. Remote
 terminal, file explorer, diff inspection, workspace snapshots and private-repository provisioning
