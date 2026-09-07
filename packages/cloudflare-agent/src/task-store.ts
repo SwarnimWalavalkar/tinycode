@@ -69,7 +69,10 @@ export class TaskStore {
     const row = this.storage.sql
       .exec<{
         cursor: number;
-      }>("INSERT INTO task_events(value) VALUES (?) RETURNING cursor", JSON.stringify(packet))
+      }>(
+        "INSERT INTO task_events(value) VALUES (?) RETURNING cursor",
+        JSON.stringify(packet),
+      )
       .toArray()[0];
     this.set("cursor", row.cursor);
     // The durable materialized transcript remains complete; old cursors receive a snapshot.
@@ -84,7 +87,11 @@ export class TaskStore {
       .exec<{
         cursor: number;
         size: number;
-      }>("SELECT cursor,length(CAST(value AS BLOB)) AS size FROM task_events WHERE cursor > ? ORDER BY cursor LIMIT ?", after, limit)
+      }>(
+        "SELECT cursor,length(CAST(value AS BLOB)) AS size FROM task_events WHERE cursor > ? ORDER BY cursor LIMIT ?",
+        after,
+        limit,
+      )
       .toArray();
     const result: CloudEvent[] = [];
     let size = 0;
@@ -158,9 +165,14 @@ export class TaskStore {
     );
   }
   queue(): QueuedMessage[] {
-    return this.requests().map(
-      ({ fingerprint, position, ...row }) => row as QueuedMessage,
-    );
+    // Keep execution receipts for recovery/deduplication, but expose only messages
+    // still awaiting delivery. The active prompt already appears in the transcript.
+    const active = this.get<Turn>("active");
+    return this.requests()
+      .filter(
+        (row) => row.id !== active?.id && !this.get(`delivered:${row.id}`),
+      )
+      .map(({ fingerprint, position, ...row }) => row as QueuedMessage);
   }
   emitQueue() {
     this.emit({ type: "queue", taskId: this.task().id, queue: this.queue() });
@@ -185,7 +197,11 @@ export class TaskStore {
     const row = this.storage.sql
       .exec<{
         seq: number;
-      }>("INSERT INTO task_items(id,value) VALUES (?,?) RETURNING seq", item.id, JSON.stringify(value))
+      }>(
+        "INSERT INTO task_items(id,value) VALUES (?,?) RETURNING seq",
+        item.id,
+        JSON.stringify(value),
+      )
       .toArray()[0];
     value.seq = row.seq;
     this.storage.sql.exec(
@@ -232,7 +248,9 @@ export class TaskStore {
       .exec<{
         id: string;
         value: string;
-      }>("SELECT id,value FROM task_items WHERE json_extract(value,'$.status')='running'")
+      }>(
+        "SELECT id,value FROM task_items WHERE json_extract(value,'$.status')='running'",
+      )
       .toArray())
       this.patchItem(row.id, { status: "failed" });
   }
@@ -241,7 +259,10 @@ export class TaskStore {
       .exec<{
         seq: number;
         size: number;
-      }>("SELECT seq,length(CAST(value AS BLOB)) AS size FROM task_items WHERE seq < ? ORDER BY seq DESC LIMIT 121", before)
+      }>(
+        "SELECT seq,length(CAST(value AS BLOB)) AS size FROM task_items WHERE seq < ? ORDER BY seq DESC LIMIT 121",
+        before,
+      )
       .toArray();
     const items: TimelineItem[] = [];
     let size = 0;

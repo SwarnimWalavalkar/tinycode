@@ -247,6 +247,7 @@ export class DurablePiAgent extends DurableObject<Env> {
             if (request)
               this.store.transaction(() => {
                 this.store.set(`delivered:${id}`, true);
+                this.store.emitQueue();
                 this.store.item({
                   id: `user:${id}`,
                   turnId: turn.id,

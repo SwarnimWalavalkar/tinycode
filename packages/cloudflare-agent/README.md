@@ -79,7 +79,11 @@ Only allow models with function/tool calling support. Verify their gateway API a
 before enabling them; not every gateway model is an agent-compatible language model.
 
 The included [GPT OSS preset](https://developers.cloudflare.com/workers-ai/models/gpt-oss-120b/)
-uses Responses, text inputs, a 128,000-token context and a conservative 4,096-token output budget.
+uses Chat Completions, text inputs, a 128,000-token context and a conservative 4,096-token output budget.
+The Gateway Responses route currently rewrites its tool schema incorrectly. This preset uses
+Chat Completions instead and normalizes null assistant tool-call content to an empty string,
+which the Gateway requires when replaying tool results. Other Responses models are unchanged.
+If you override `TINYCODE_GATEWAY_MODELS` in `.dev.vars`, update this preset's `api` there too.
 Its empty `thinkingLevels` leaves model reasoning at its default without advertising unverified
 reasoning controls. Other presets can explicitly allow `off`, `minimal`, `low`, `medium`, `high`,
 or `xhigh` where supported. Unsupported images are rejected rather than silently dropped.

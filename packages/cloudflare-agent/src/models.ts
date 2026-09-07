@@ -104,6 +104,29 @@ export function createPiAgent(
         ...options,
         apiKey: credential,
         headers: { ...options?.headers, ...model.headers },
+        onPayload: async (payload: unknown) => {
+          const next = (await options?.onPayload?.(payload, model)) ?? payload;
+          // Workers AI's GPT OSS Gateway adapter rejects null assistant content
+          // when replaying a tool call, although Chat Completions permits it.
+          if (model.id === "@cf/openai/gpt-oss-120b" && model.api === "openai-completions") {
+            const body = next as {
+              messages?: {
+                role: string;
+                content?: unknown;
+                tool_calls?: unknown[];
+              }[];
+            };
+            for (const message of body.messages ?? []) {
+              if (
+                message.role === "assistant" &&
+                message.content === null &&
+                message.tool_calls?.length
+              )
+                message.content = "";
+            }
+          }
+          return next;
+        },
       };
       return model.api === "openai-responses"
         ? responses(model as Model<"openai-responses">, context, settings)

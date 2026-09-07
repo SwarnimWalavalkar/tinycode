@@ -181,6 +181,15 @@ describe("cloud-authoritative tasks", () => {
       expect(fakes.instances[0]?.prompt).toHaveBeenCalledWith("hello", []),
     );
     expect(store.task().status).toBe("running");
+    expect(store.queue()).toEqual([]);
+    expect(store.request("request-1")?.status).toBe("sending");
+    const runningSnapshot = (await (
+      await restored.fetch(new Request("https://internal/snapshot"))
+    ).json()) as any;
+    expect(runningSnapshot.queue).toEqual([]);
+    expect(
+      runningSnapshot.items.filter((i: any) => i.text === "hello"),
+    ).toHaveLength(1);
     fakes.instances[0].finish();
     await vi.waitFor(() => expect(store.task().status).toBe("complete"));
     const another = new DurablePiAgent(ctx, env);
@@ -223,6 +232,7 @@ describe("cloud-authoritative tasks", () => {
     await agent.fetch(
       internal("/send", { requestId: "second", text: "second" }),
     );
+    expect(store.queue().map((q) => q.id)).toEqual(["second"]);
     expect((await agent.fetch(internal("/interrupt", {}))).status).toBe(200);
     expect(store.task().status).toBe("interrupted");
     expect(store.queue().map((q) => q.id)).toEqual(["second"]);

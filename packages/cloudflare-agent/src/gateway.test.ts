@@ -1,5 +1,6 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { Type } from "typebox";
+import { readFileSync } from "node:fs";
 import type { Env } from "./env.js";
 import { createPiAgent, modelCatalog, normalizeThinkingLevel, resolveModel } from "./models.js";
 import { gatewayCredential } from "./gateway.js";
@@ -40,7 +41,10 @@ describe("Cloudflare model boundary", () => {
     expect(model.baseUrl).toBe(
       `https://api.cloudflare.com/client/v4/accounts/${env.CLOUDFLARE_ACCOUNT_ID}/ai/v1`,
     );
-    expect(model.headers).toEqual({ "cf-aig-gateway-id": "tinycode", "cf-aig-skip-cache": "true" });
+    expect(model.headers).toEqual({
+      "cf-aig-gateway-id": "tinycode",
+      "cf-aig-skip-cache": "true",
+    });
     expect(modelCatalog(env).models[0].description).toContain("AI Gateway");
   });
 
@@ -79,78 +83,102 @@ describe("Cloudflare model boundary", () => {
     );
   });
 
-  it("streams tool arguments, executes a Pi tool, and sends its result and images through Chat Completions", async () => {
-    const requests: { url: string; headers: Headers; body: any }[] = [];
-    vi.stubGlobal(
-      "fetch",
-      vi.fn(async (url: string | URL | Request, init?: RequestInit) => {
-        requests.push({
-          url: String(url),
-          headers: new Headers(init?.headers),
-          body: JSON.parse(String(init?.body)),
-        });
-        const chunk = (delta: unknown, finish_reason: string | null = null) => ({
-          id: "chat-test",
-          object: "chat.completion.chunk",
-          created: 1,
-          model: "@cf/test/tool-model",
-          choices: [{ index: 0, delta, finish_reason }],
-        });
-        return requests.length === 1
-          ? sse([
-              chunk({
-                role: "assistant",
-                tool_calls: [
-                  {
-                    index: 0,
-                    id: "call_1",
-                    type: "function",
-                    function: { name: "check", arguments: '{"value":' },
-                  },
-                ],
-              }),
-              chunk({ tool_calls: [{ index: 0, function: { arguments: '"ok"}' } }] }),
-              chunk({}, "tool_calls"),
-            ])
-          : sse([chunk({ role: "assistant", content: "Done" }), chunk({}, "stop")]);
-      }),
-    );
-    const execute = vi.fn(async () => ({
-      content: [{ type: "text" as const, text: "tool worked" }],
-      details: {},
-    }));
-    const agent = createPiAgent(custom(), {
-      sessionId: "test",
-      modelId: "@cf/test/tool-model",
-      systemPrompt: "Test",
-      tools: [
-        {
-          name: "check",
-          label: "Check",
-          description: "Test",
-          parameters: Type.Object({ value: Type.String() }),
-          execute,
-        },
-      ],
-    });
-    await agent.prompt("Check", [{ type: "image", mimeType: "image/png", data: "AA==" }]);
-    expect(agent.state.errorMessage).toBeUndefined();
-    expect(execute).toHaveBeenCalledTimes(1);
-    expect(requests).toHaveLength(2);
-    for (const request of requests) {
-      expect(request.url).toBe(
-        `https://api.cloudflare.com/client/v4/accounts/${env.CLOUDFLARE_ACCOUNT_ID}/ai/v1/chat/completions`,
+  it.each([false, true])(
+    "streams a complete tool roundtrip (shipped GPT OSS preset: %s)",
+    async (shipped) => {
+      const deployment = JSON.parse(
+        readFileSync(new URL("../wrangler.jsonc", import.meta.url), "utf8"),
+      ).vars;
+      const modelId = shipped ? "@cf/openai/gpt-oss-120b" : "@cf/test/tool-model";
+      const config = shipped ? { ...deployment, ...env } : custom();
+      const requests: { url: string; headers: Headers; body: any }[] = [];
+      vi.stubGlobal(
+        "fetch",
+        vi.fn(async (url: string | URL | Request, init?: RequestInit) => {
+          requests.push({
+            url: String(url),
+            headers: new Headers(init?.headers),
+            body: JSON.parse(String(init?.body)),
+          });
+          const chunk = (delta: unknown, finish_reason: string | null = null) => ({
+            id: "chat-test",
+            object: "chat.completion.chunk",
+            created: 1,
+            model: "@cf/test/tool-model",
+            choices: [{ index: 0, delta, finish_reason }],
+          });
+          return requests.length === 1
+            ? sse([
+                chunk({
+                  role: "assistant",
+                  tool_calls: [
+                    {
+                      index: 0,
+                      id: "call_1",
+                      type: "function",
+                      function: { name: "check", arguments: '{"value":' },
+                    },
+                  ],
+                }),
+                chunk({
+                  tool_calls: [{ index: 0, function: { arguments: '"ok"}' } }],
+                }),
+                chunk({}, "tool_calls"),
+              ])
+            : sse([chunk({ role: "assistant", content: "Done" }), chunk({}, "stop")]);
+        }),
       );
-      expect(request.headers.get("authorization")).toBe("Bearer test-cloudflare-token");
-      expect(request.headers.get("cf-aig-gateway-id")).toBe("tinycode");
-      expect(request.body.model).toBe("@cf/test/tool-model");
-      expect(request.body.reasoning_effort).toBeUndefined();
-    }
-    expect(JSON.stringify(requests[0].body.messages)).toContain("data:image/png;base64,AA==");
-    expect(requests[1].body.messages).toContainEqual(
-      expect.objectContaining({ role: "tool", tool_call_id: "call_1", content: "tool worked" }),
-    );
-  });
+      const execute = vi.fn(async () => ({
+        content: [{ type: "text" as const, text: "tool worked" }],
+        details: {},
+      }));
+      const agent = createPiAgent(config, {
+        sessionId: "test",
+        modelId,
+        systemPrompt: "Test",
+        tools: [
+          {
+            name: "check",
+            label: "Check",
+            description: "Test",
+            parameters: Type.Object({ value: Type.String() }),
+            execute,
+          },
+        ],
+      });
+      await agent.prompt(
+        "Check",
+        shipped ? [] : [{ type: "image", mimeType: "image/png", data: "AA==" }],
+      );
+      expect(agent.state.errorMessage).toBeUndefined();
+      expect(execute).toHaveBeenCalledTimes(1);
+      expect(requests).toHaveLength(2);
+      for (const request of requests) {
+        expect(request.url).toBe(
+          `https://api.cloudflare.com/client/v4/accounts/${env.CLOUDFLARE_ACCOUNT_ID}/ai/v1/chat/completions`,
+        );
+        expect(request.headers.get("authorization")).toBe("Bearer test-cloudflare-token");
+        expect(request.headers.get("cf-aig-gateway-id")).toBe("tinycode");
+        expect(request.body.model).toBe(modelId);
+        expect(request.body.reasoning_effort).toBeUndefined();
+      }
+      if (!shipped)
+        expect(JSON.stringify(requests[0].body.messages)).toContain("data:image/png;base64,AA==");
+      expect(requests[0].body.tools[0]).toMatchObject({
+        type: "function",
+        function: { name: "check" },
+      });
+      const toolMessage = requests[1].body.messages.find((m: any) => m.role === "assistant");
+      expect(toolMessage.content).toBe(shipped ? "" : null);
+      expect(requests[1].body.messages).toContainEqual(
+        expect.objectContaining({
+          role: "tool",
+          tool_call_id: "call_1",
+          content: "tool worked",
+        }),
+      );
+    },
+  );
 
   it("uses Responses with qualified model IDs and reasoning, retaining streamed text", async () => {
     let payload: any;
@@ -169,8 +197,16 @@ describe("Cloudflare model boundary", () => {
         };
         return sse([
           { type: "response.created", response: { id: "resp_test" } },
-          { type: "response.output_item.added", output_index: 0, item: { ...item, content: [] } },
-          { type: "response.output_text.delta", output_index: 0, delta: "Hello" },
+          {
+            type: "response.output_item.added",
+            output_index: 0,
+            item: { ...item, content: [] },
+          },
+          {
+            type: "response.output_text.delta",
+            output_index: 0,
+            delta: "Hello",
+          },
           { type: "response.output_item.done", output_index: 0, item },
           {
             type: "response.completed",
