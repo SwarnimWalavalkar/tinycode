@@ -80,9 +80,10 @@ tool-calling protocol, input types, limits and thinking levels to the catalog.
 
 The included [GPT OSS preset](https://developers.cloudflare.com/workers-ai/models/gpt-oss-120b/)
 uses Chat Completions, text inputs, a 128,000-token context and a conservative 4,096-token output budget.
-The Gateway Responses route currently rewrites its tool schema incorrectly. This preset uses
-Chat Completions instead and normalizes null assistant tool-call content to an empty string,
-which the Gateway requires when replaying tool results. Other Responses models are unchanged.
+Workers AI streaming can lose tool-call boundaries or terminate without a final answer.
+The GPT OSS transport requests complete Chat Completions and adapts their typed results to Pi's
+existing parser. Results arrive per model step, not token by token. Tool execution and the
+agent loop remain in Pi; no tool calls are inferred from thought text. Other models are unchanged.
 `TINYCODE_GATEWAY_MODELS` is no longer read. Remove old overrides from `.dev.vars`,
 `wrangler.jsonc`, or production environments; GPT OSS always uses the checked-in Completions preset.
 Its empty `thinkingLevels` leaves model reasoning at its default without advertising unverified

@@ -7,6 +7,7 @@ import type { ModelCatalog } from "../../../src/shared/contracts.js";
 import type { Env } from "./env.js";
 
 import { gatewayCredential, gatewayModel, modelDefinition } from "./gateway.js";
+import { workersAiFetch } from "./workers-ai.js";
 
 export function configuredModelIds(env: Env): string[] {
   const ids = (env.TINYCODE_MODELS ?? env.TINYCODE_DEFAULT_MODEL ?? "openai/gpt-5.4")
@@ -16,6 +17,15 @@ export function configuredModelIds(env: Env): string[] {
   const fallback = env.TINYCODE_DEFAULT_MODEL?.trim();
   if (fallback && !ids.includes(fallback)) ids.unshift(fallback);
   return [...new Set(ids)];
+}
+
+export function completionError(messages: AgentMessage[]): string | undefined {
+  const last = messages.at(-1);
+  if (last?.role !== "assistant") return "The model stopped without a final answer. Please retry.";
+  if (last.stopReason === "length") return "The model reached its output limit before finishing. Please retry.";
+  if (last.stopReason !== "stop") return last.errorMessage || "The model did not finish its response. Please retry.";
+  if (!last.content.some(part => part.type === "text" && part.text.trim()))
+    return "The model returned no final answer. Please retry or choose another model.";
 }
 
 export function defaultModelId(env: Env): string {
@@ -96,6 +106,7 @@ export function createPiAgent(
       const settings = {
         ...options,
         apiKey: credential,
+        ...(model.id.startsWith("@cf/") ? { fetch: workersAiFetch } : {}),
         headers: { ...options?.headers, ...model.headers },
         onPayload: async (payload: unknown) => {
           const next = (await options?.onPayload?.(payload, model)) ?? payload;

@@ -24,6 +24,7 @@ import {
 } from "./http.js";
 import type { Env } from "./env.js";
 import {
+  completionError,
   createPiAgent,
   defaultModelId,
   modelCatalog,
@@ -280,7 +281,7 @@ export class DurablePiAgent extends DurableObject<Env> {
         const images = await this.nativeImages(request.images);
         if (!this.stopping) await agent.prompt(request.text, images);
         this.persist();
-        const error = agent.state.errorMessage;
+        const error = agent.state.errorMessage || completionError(agent.state.messages);
         this.settle(
           this.stopping ? "interrupted" : error ? "failed" : "complete",
           this.stopping ? undefined : error,

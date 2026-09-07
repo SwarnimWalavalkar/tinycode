@@ -116,6 +116,7 @@ function fakeAgent() {
         message: {
           role: "assistant",
           content: [{ type: "text", text: "cloud answer" }],
+          stopReason: "stop",
         },
       });
     }),

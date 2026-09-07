@@ -2,7 +2,7 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 import { Type } from "typebox";
 import { readFileSync } from "node:fs";
 import type { Env } from "./env.js";
-import { createPiAgent, modelCatalog, normalizeThinkingLevel, resolveModel } from "./models.js";
+import { completionError, createPiAgent, modelCatalog, normalizeThinkingLevel, resolveModel } from "./models.js";
 import { gatewayCredential } from "./gateway.js";
 
 const env = {
@@ -24,6 +24,11 @@ const sse = (events: unknown[]) =>
 afterEach(() => vi.unstubAllGlobals());
 
 describe("Cloudflare model boundary", () => {
+  it("does not report thought-only or truncated turns as complete", () => {
+    const message = { role: "assistant", stopReason: "stop", content: [{ type: "thinking", thinking: "Use a tool" }] };
+    expect(completionError([message] as any)).toContain("no final answer");
+    expect(completionError([{ ...message, stopReason: "length" }] as any)).toContain("output limit");
+  });
   it("preserves existing model IDs but routes only through the Cloudflare account API", () => {
     const { model } = resolveModel(env, "openai/gpt-5.4");
     expect(model.id).toBe("openai/gpt-5.4");
@@ -83,32 +88,15 @@ describe("Cloudflare model boundary", () => {
           headers: new Headers(init?.headers),
           body: JSON.parse(String(init?.body)),
         });
-        const chunk = (delta: unknown, finish_reason: string | null = null) => ({
-          id: "chat-test",
-          object: "chat.completion.chunk",
-          created: 1,
-          model: "@cf/test/tool-model",
-          choices: [{ index: 0, delta, finish_reason }],
+        return Response.json({
+          id: "chat_test", created: 1, model: workersModel,
+          choices: [{ index: 0, finish_reason: requests.length === 1 ? "tool_calls" : "stop",
+            message: requests.length === 1
+              ? { role: "assistant", content: null, tool_calls: [{ type: "function", id: "call_1", function: { name: "check", arguments: '{"value":"ok"}' } }] }
+              : { role: "assistant", content: "Done", reasoning_content: "The tool succeeded" },
+          }],
+          usage: { prompt_tokens: 10, completion_tokens: 5, total_tokens: 15 },
         });
-        return requests.length === 1
-          ? sse([
-              chunk({
-                role: "assistant",
-                tool_calls: [
-                  {
-                    index: 0,
-                    id: "call_1",
-                    type: "function",
-                    function: { name: "check", arguments: '{"value":' },
-                  },
-                ],
-              }),
-              chunk({
-                tool_calls: [{ index: 0, function: { arguments: '"ok"}' } }],
-              }),
-              chunk({}, "tool_calls"),
-            ])
-          : sse([chunk({ role: "assistant", content: "Done" }), chunk({}, "stop")]);
       }),
     );
     const execute = vi.fn(async () => ({
@@ -141,13 +129,12 @@ describe("Cloudflare model boundary", () => {
       expect(request.headers.get("cf-aig-gateway-id")).toBe("tinycode");
       expect(request.body.model).toBe(modelId);
       expect(request.body.reasoning_effort).toBeUndefined();
+      expect(request.body.stream).toBe(false);
     }
     expect(requests[0].body.tools[0]).toMatchObject({
       type: "function",
       function: { name: "check" },
     });
-    const toolMessage = requests[1].body.messages.find((m: any) => m.role === "assistant");
-    expect(toolMessage.content).toBe("");
     expect(requests[1].body.messages).toContainEqual(
       expect.objectContaining({
         role: "tool",
@@ -155,6 +142,9 @@ describe("Cloudflare model boundary", () => {
         content: "tool worked",
       }),
     );
+    expect(completionError(agent.state.messages)).toBeUndefined();
+    const final = agent.state.messages.at(-1);
+    expect(final?.role === "assistant" && final.content.map(part => part.type)).toEqual(["thinking", "text"]);
   });
 
   it("uses Responses with qualified model IDs and reasoning, retaining streamed text", async () => {

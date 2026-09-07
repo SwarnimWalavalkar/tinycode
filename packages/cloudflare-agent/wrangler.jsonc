@@ -31,7 +31,6 @@
   ],
   "containers": [
     {
-      // Preserve the existing container application when renaming the Worker.
       "name": "tinycode-cloudflare-agent-sandbox",
       "class_name": "Sandbox",
       "image": "./Dockerfile",
