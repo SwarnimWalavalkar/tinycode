@@ -151,6 +151,87 @@ Additional VM implementations belong behind `VmRuntime`; only Cloudflare Sandbox
 The fully Cloudflare-hosted deployment runs this durable Pi harness. Local Codex/Claude/Pi CLI
 execution remains available through the optional Node server, not through Workers.
 
+## Local development and end-to-end testing
+
+`pnpm run dev` still starts the Node-based app. Use `pnpm run dev:cloudflare` for
+the standalone Cloudflare UI and durable runtime. It builds the UI once and starts
+Wrangler explicitly in local mode, bound to loopback on port 8794. Worker source
+changes reload automatically; restart the command after UI changes to rebuild assets.
+DO SQLite and R2 data persist under `packages/cloudflare-agent/.wrangler/state` (gitignored).
+Containers run on your local Docker engine. No deployment or remote storage is required;
+real model calls still go to AI Gateway and consume inference allowance/credits.
+
+### 1. Start without inference credentials
+
+Start Docker Desktop or OrbStack, and use Node >=22.19 with pnpm. From the repo root:
+
+```sh
+pnpm install --frozen-lockfile
+cp -n packages/cloudflare-agent/dev.vars.example packages/cloudflare-agent/.dev.vars
+pnpm run check
+pnpm run dev:cloudflare
+```
+
+The copy preserves an existing `.dev.vars`; inspect your existing configuration if present.
+The template contains only dummy values and is safe to commit. `.dev.vars` is gitignored
+and is loaded by Wrangler from the package directory, not the repository root.
+See [Cloudflare local variables](https://developers.cloudflare.com/workers/local-development/environment-variables/).
+
+Open **http://localhost:8794** in Chrome and sign in with the template's
+`TINYCODE_AGENT_TOKEN` value. Use `localhost` consistently for the browser session.
+No real model will run yet. In a second terminal, run `pnpm run test:cloudflare:http`.
+This smoke test requires the template's login token and an empty inference token; it
+deliberately refuses a model-ready server. It creates test tasks in your local state.
+
+### 2. Enable live inference
+
+In your Cloudflare account, use the `default` AI Gateway (or create a gateway and use
+its slug). For the Workers AI free allocation, leave its Workers AI billing on
+**Standard**, not prepaid Unified billing. Create an account-scoped API token with
+**Account > Workers AI > Read** permission. See the [AI Gateway REST API](https://developers.cloudflare.com/ai-gateway/usage/rest-api/).
+
+Edit `packages/cloudflare-agent/.dev.vars`: replace the dummy account ID with your real
+32-character ID and fill `CLOUDFLARE_API_TOKEN`. Keep both model settings restricted to
+GPT OSS 120B. Restart `pnpm run dev:cloudflare`. Do not paste the inference token into
+the UI, chat, or sandbox. Do not run the credential-free HTTP smoke with this configuration.
+
+### 3. Exercise the real agent path
+
+Create a new Cloudflare task with GPT OSS 120B, then work through this checklist:
+
+1. **Inference:** send `Reply with LOCAL_AGENT_OK without using any tools.` Expect streamed
+   text and a completed turn. This proves actual gateway access, unlike the readiness check.
+2. **Sandbox:** send `Use vm_start, then vm_exec to run python3 -c 'import platform; print(platform.system()); print(6*7)'. Report the actual output.`
+   Expect visible tool calls, Linux, and 42. First startup can take longer while Docker builds/starts.
+3. **Filesystem within a running sandbox:** ask it to create `/tmp/tinycode-e2e.txt` with
+   `SANDBOX_OK`, then read it in a separate tool call. Expect the same content; this does
+   not establish persistence across sandbox destruction or sleep.
+4. **Browser disconnect:** ask it to run `sleep 20; echo DETACHED_OK` through `vm_exec`.
+   Once execution starts, close the browser tab, leaving Wrangler and Docker running.
+   Reopen the same URL after completion. Expect the tool result and completed transcript.
+5. **History across runtime restarts:** after the turn finishes, stop Wrangler with Ctrl-C,
+   restart the same command, and reopen the task. Expect the saved conversation. Ask a
+   follow-up about the earlier result to check restored model context too.
+6. **Stop:** request `sleep 60; echo SHOULD_NOT_FINISH` through `vm_exec`, then press Stop
+   while it runs. Expect an interrupted/stopped turn, not a successful completion output.
+7. **Cleanup:** ask the agent to call `vm_destroy`. Conversation history should remain;
+   sandbox files are not guaranteed to remain. Stop Wrangler when done.
+
+Optional crash recovery check: stop Wrangler during a running command and restart it.
+The expected contract is an **interrupted** turn and paused pending queue, not automatic
+replay of potentially side-effecting work. Local testing does not establish production
+eviction timing, placement, remote container cold-start behavior, or operation with your
+laptop off. Those require a deployed canary.
+
+GPT OSS 120B is text-only in our preset: skip image-understanding tests. The credential-free
+HTTP smoke covers attachment storage separately. Private repository credentials, durable
+workspace files, and remote file/diff/terminal UI are not implemented.
+
+If inference fails, inspect the visible error and Gateway dashboard: check account/token
+scope for 401/403, model support/configuration for 400, and quota/credits for 429 or billing
+errors. Readiness only validates configuration. If sandbox startup fails, check that Docker
+is running and inspect the Wrangler terminal. Never include tokens when sharing logs.
+
 ## Validate without deploying or calling a model
 
 ```sh
