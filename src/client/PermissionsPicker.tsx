@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useId, useRef, useState } from "react";
 import {
   BookOpen,
   Check,
@@ -42,9 +42,10 @@ export default function PermissionsPicker({
   const root = useRef<HTMLDivElement>(null);
   const trigger = useRef<HTMLButtonElement>(null);
   const menu = useRef<HTMLDivElement>(null);
+  const infoId = useId();
   const options = permissionOptions[provider];
   const selected = options.find((option) => option.id === value);
-  const label = selected?.label ?? "Permission Settings";
+  const label = selected?.label ?? "Permissions";
   const Icon = selected ? icons[selected.icon] : Shield;
 
   useEffect(() => {
@@ -80,6 +81,47 @@ export default function PermissionsPicker({
     } finally {
       setSaving(false);
     }
+  }
+
+  if (provider === "cloudflare") {
+    const option = options[0];
+    return (
+      <div
+        className="permission-picker"
+        ref={root}
+        onBlur={(event) => {
+          if (!event.currentTarget.contains(event.relatedTarget)) setOpen(false);
+        }}
+        onKeyDown={(event) => {
+          if (event.key === "Escape" && open) {
+            event.preventDefault();
+            event.stopPropagation();
+            setOpen(false);
+            trigger.current?.focus();
+          }
+        }}
+      >
+        <button
+          ref={trigger}
+          type="button"
+          className="permission-info"
+          aria-expanded={open}
+          aria-controls={infoId}
+          onClick={() => setOpen(!open)}
+        >
+          <ShieldCheck size={15} aria-hidden="true" />
+          <span>{option.label}</span>
+        </button>
+        {open && (
+          <div id={infoId} className="permission-menu permission-explainer" role="region" aria-label="About managed VM tools">
+            <strong>{option.label}</strong>
+            <p>The agent can start an isolated Linux sandbox to run commands, work with files, and use installed tools.</p>
+            <p>The agent itself runs in a Durable Object. The sandbox is only used when needed.</p>
+            <p>Sandbox files are temporary. Save anything you need before it sleeps or the session is deleted.</p>
+          </div>
+        )}
+      </div>
+    );
   }
 
   return (
@@ -143,7 +185,9 @@ export default function PermissionsPicker({
           aria-busy={saving}
         >
           <div className="permission-heading" role="presentation">
-            {provider === "pi" ? "Which tools can Pi use?" : "How should actions be approved?"}
+            {provider === "pi"
+              ? "Which tools can Pi use?"
+              : "How should actions be approved?"}
           </div>
           {options.map((option) => {
             const OptionIcon = icons[option.icon];

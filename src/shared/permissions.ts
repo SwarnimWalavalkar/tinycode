@@ -111,12 +111,22 @@ export const permissionOptions: Record<ProviderId, readonly PermissionOption[]> 
       icon: "deny",
     },
   ],
+  cloudflare: [
+    {
+      id: "native",
+      label: "Managed VM tools",
+      description:
+        "Allow the agent to run commands in an isolated Linux sandbox. Files are lost when the sandbox sleeps or is deleted.",
+      icon: "auto",
+    },
+  ],
 };
 
 export const defaultPermissionMode: Record<ProviderId, PermissionMode> = {
   codex: "workspace-write",
   claude: "default",
   pi: "native",
+  cloudflare: "native",
 };
 
 export function parsePermissionMode(provider: ProviderId, value: unknown): PermissionMode {

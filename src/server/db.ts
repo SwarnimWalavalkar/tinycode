@@ -128,9 +128,12 @@ export class Store {
     )
       this.db.exec("ALTER TABLE tasks ADD COLUMN thinking_level TEXT");
     if (
-      (this.db.pragma("table_info(tasks)") as { name: string; notnull: number }[]).some(
-        (column) => column.name === "project_id" && column.notnull,
-      )
+      (
+        this.db.pragma("table_info(tasks)") as {
+          name: string;
+          notnull: number;
+        }[]
+      ).some((column) => column.name === "project_id" && column.notnull)
     ) {
       // Rebuild without cascading deletion into existing transcripts.
       this.db.pragma("foreign_keys = OFF");
@@ -215,7 +218,9 @@ export class Store {
       .prepare(
         "SELECT id, task_id taskId, text, mode, status, error, created_at createdAt, images FROM queued_messages WHERE task_id = ? ORDER BY position, seq",
       )
-      .all(taskId) as (Omit<QueuedMessage, "images"> & { images: string | null })[];
+      .all(taskId) as (Omit<QueuedMessage, "images"> & {
+      images: string | null;
+    })[];
     return rows.map(({ images, ...row }) => ({
       ...row,
       ...(images ? { images: JSON.parse(images) } : {}),
@@ -331,6 +336,16 @@ export class Store {
     return (this.db.prepare("SELECT * FROM tasks ORDER BY updated_at DESC").all() as TaskRow[]).map(
       task,
     );
+  }
+  deleteTask(id: string) {
+    this.db.transaction(() => {
+      // Detached images are reclaimed by Images.prune; workspace/harness files are untouched.
+      this.db
+        .prepare("UPDATE images SET task_id=NULL, created_at='1970-01-01' WHERE task_id=?")
+        .run(id);
+      this.db.prepare("DELETE FROM requests WHERE task_id=?").run(id);
+      this.db.prepare("DELETE FROM tasks WHERE id=?").run(id);
+    })();
   }
   task(id: string) {
     const r = this.db.prepare("SELECT * FROM tasks WHERE id = ?").get(id) as TaskRow | undefined;

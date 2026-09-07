@@ -22,7 +22,7 @@ export interface AdapterSession {
   /** Resolves when the native harness accepts the input; rejects if it cannot be delivered. */
   steer?(text: string, images?: NativeImage[]): Promise<void>;
   interrupt(): Promise<void>;
-  dispose(): void;
+  dispose(): void | Promise<void>;
 }
 export interface AdapterContext {
   task: Task;

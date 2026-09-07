@@ -23,6 +23,7 @@ import {
   websocketAuthenticated,
 } from "./auth.js";
 import { developmentOrigin } from "./dev-network.js";
+import { CloudAuthority } from "./cloud-authority.js";
 import type { ClientPacket, ProviderId, ServerPacket } from "../shared/contracts.js";
 
 const host = process.env.TINYCODE_HOST ?? "127.0.0.1";
@@ -56,8 +57,11 @@ const peers = new Map<
   { taskId?: string; terminalId?: string; send: (p: ServerPacket) => void }
 >();
 const publish = (packet: ServerPacket, taskId?: string) => {
+  if (packet.type === "tasks" || packet.type === "bootstrap")
+    packet = { ...packet, tasks: cloud.merge(packet.tasks) };
   for (const peer of peers.values()) if (!taskId || peer.taskId === taskId) peer.send(packet);
 };
+const cloud = new CloudAuthority(() => publish({ type: "tasks", tasks: store.tasks() }));
 let providerCheck: Promise<void> | undefined;
 let providersCheckedAt = 0;
 function refreshProviders(force = false): Promise<void> {
@@ -87,7 +91,7 @@ const terminals = new Terminals();
 const bootstrap = (): ServerPacket => ({
   type: "bootstrap",
   projects: store.projects(),
-  tasks: store.tasks(),
+  tasks: cloud.merge(store.tasks()),
   providers,
 });
 const findTask = (id: string) => {
@@ -110,11 +114,19 @@ const body = async (req: IncomingMessage) => {
   return JSON.parse(Buffer.concat(chunks).toString("utf8") || "{}");
 };
 const json = (res: ServerResponse, data: unknown, status = 200) => {
-  res.writeHead(status, { "Content-Type": "application/json", "Cache-Control": "no-store" });
+  res.writeHead(status, {
+    "Content-Type": "application/json",
+    "Cache-Control": "no-store",
+  });
   res.end(JSON.stringify(data));
 };
 
 const server = createServer(async (req, res) => {
+  if (shuttingDown) {
+    res.writeHead(503, { connection: "close" });
+    res.end("Server is shutting down");
+    return;
+  }
   res.setHeader("X-Content-Type-Options", "nosniff");
   res.setHeader("Referrer-Policy", "no-referrer");
   res.setHeader("X-Frame-Options", "DENY");
@@ -173,7 +185,23 @@ const server = createServer(async (req, res) => {
         return;
       }
       if (req.method === "GET") {
-        const image = images.get(id);
+        let localImage;
+        try {
+          localImage = images.get(id);
+        } catch {}
+        if (!localImage && cloud.configured()) {
+          const remote = await cloud.fetch(`/api/images/${encodeURIComponent(id)}`);
+          if (remote.ok) {
+            res.writeHead(remote.status, {
+              "Content-Type": remote.headers.get("content-type")!,
+              "Cache-Control": "private, max-age=86400, immutable",
+            });
+            res.end(Buffer.from(await remote.arrayBuffer()));
+            return;
+          }
+          await remote.body?.cancel();
+        }
+        const image = localImage ?? images.get(id);
         res.setHeader("Vary", "Origin, Authorization, Cookie");
         res.setHeader("Content-Type", image.mimeType);
         res.setHeader("Cache-Control", "private, max-age=86400, immutable");
@@ -187,6 +215,7 @@ const server = createServer(async (req, res) => {
       }
     }
     if (url.pathname === "/api/bootstrap") {
+      await cloud.refresh().catch(() => {});
       json(res, bootstrap());
       return;
     }
@@ -206,6 +235,11 @@ const server = createServer(async (req, res) => {
       return;
     }
     if (["/api/models", "/api/thinking"].includes(url.pathname) && req.method === "GET") {
+      if (url.searchParams.get("provider") === "cloudflare") {
+        const remote = await cloud.fetch(url.pathname + url.search);
+        json(res, await remote.json(), remote.status);
+        return;
+      }
       const provider = providers.find((p) => p.id === url.searchParams.get("provider"));
       if (!provider) throw new Error("Unknown harness");
       if (!provider.available)
@@ -251,6 +285,10 @@ const server = createServer(async (req, res) => {
     }
     if (url.pathname === "/api/tasks" && req.method === "POST") {
       const input = await body(req);
+      if (input.provider === "cloudflare") {
+        json(res, await cloud.create(input));
+        return;
+      }
       const provider = string(input.provider) as ProviderId;
       if (!Object.hasOwn(adapters, provider)) throw new Error("Unknown harness");
       const task = await createTask(store, dataDir, {
@@ -267,7 +305,33 @@ const server = createServer(async (req, res) => {
     }
     const match = url.pathname.match(/^\/api\/tasks\/([^/]+)(?:\/(.*))?$/);
     if (match) {
+      if (cloud.owns(match[1])) {
+        const input = req.method === "POST" || req.method === "PUT" ? await body(req) : undefined;
+        if (input && ["send", "queue/edit"].includes(match[2]))
+          await cloud.uploadImages(input.images, images);
+        const remote = await cloud.fetch(url.pathname + url.search, {
+          method: req.method,
+          ...(input ? { body: JSON.stringify(input) } : {}),
+        });
+        res.writeHead(remote.status, {
+          "Content-Type": remote.headers.get("content-type") ?? "application/json",
+          "Cache-Control": "no-store",
+        });
+        res.end(Buffer.from(await remote.arrayBuffer()));
+        return;
+      }
+      if (!match[2] && req.method === "DELETE") {
+        runtime.deleteTask(match[1]);
+        terminals.closeTask(match[1]);
+        void images.prune().catch(() => {});
+        json(res, { ok: true });
+        return;
+      }
       const task = findTask(match[1]);
+      if (task.provider === "cloudflare" && !["timeline"].includes(match[2]))
+        throw new Error(
+          "This pre-release local cloud task is read-only; create a new cloud task to continue",
+        );
       const action = match[2];
       if (action === "title" && req.method === "POST") {
         const input = await body(req);
@@ -428,6 +492,10 @@ const wss = new WebSocketServer({
   handleProtocols: (protocols) => (protocols.has("tinycode") ? "tinycode" : false),
 });
 server.on("upgrade", (req, socket, head) => {
+  if (shuttingDown) {
+    socket.destroy();
+    return;
+  }
   if (
     req.url !== "/socket" ||
     !sameOrigin(req, origin, allowedOrigins) ||
@@ -453,7 +521,10 @@ wss.on("connection", (ws) => {
     }
     ws.send(JSON.stringify(packet));
   };
-  const peer: { taskId?: string; terminalId?: string; send: typeof send } = { send };
+  const peer: { taskId?: string; terminalId?: string; send: typeof send } = {
+    send,
+  };
+  const remote = cloud.attach(send);
   peers.set(ws, peer);
   send(bootstrap());
   ws.on("message", (data) => {
@@ -464,6 +535,11 @@ wss.on("connection", (ws) => {
         return;
       }
       if (message.type === "subscribe") {
+        if (cloud.owns(message.taskId)) {
+          peer.taskId = message.taskId;
+          remote.send(message);
+          return;
+        }
         const task = findTask(string(message.taskId));
         peer.taskId = task.id;
         send({
@@ -479,6 +555,10 @@ wss.on("connection", (ws) => {
         peer.terminalId = undefined;
       }
       if (message.type === "task.read") {
+        if (cloud.owns(message.taskId)) {
+          remote.send(message);
+          return;
+        }
         if (message.taskId !== peer.taskId) throw new Error("Open the task before marking it read");
         if (store.markTaskRead(string(message.taskId), string(message.attentionId, 100)))
           publish({ type: "tasks", tasks: store.tasks() });
@@ -498,10 +578,14 @@ wss.on("connection", (ws) => {
         terminals.resize(message.terminalId, size(message.cols), size(message.rows));
       if (message.type === "terminal.close") terminals.close(message.terminalId);
     } catch (error) {
-      send({ type: "error", message: error instanceof Error ? error.message : String(error) });
+      send({
+        type: "error",
+        message: error instanceof Error ? error.message : String(error),
+      });
     }
   });
   ws.on("close", () => {
+    remote.close();
     peers.delete(ws);
     terminals.detach(send);
   });
@@ -512,14 +596,20 @@ server.listen(port, host, () => {
   if (devOrigin) console.log(`Development URL · ${devOrigin}/`);
   void refreshProviders().then(() => titles.recover());
 });
-function shutdown() {
-  void titles.dispose();
-  runtime.dispose();
+let shuttingDown = false;
+async function shutdown() {
+  if (shuttingDown) return;
+  shuttingDown = true;
+  const forcedExit = setTimeout(() => process.exit(0), 20_000);
+  forcedExit.unref();
+  const listenerClosed = new Promise<void>((resolve) => server.close(() => resolve()));
+  cloud.dispose();
   terminals.dispose();
   for (const ws of peers.keys()) ws.close();
   wss.close();
-  server.close(() => process.exit(0));
-  setTimeout(() => process.exit(0), 3000).unref();
+  await Promise.allSettled([titles.dispose(), runtime.dispose(), listenerClosed]);
+  clearTimeout(forcedExit);
+  process.exit(0);
 }
-process.on("SIGINT", shutdown);
-process.on("SIGTERM", shutdown);
+process.on("SIGINT", () => void shutdown());
+process.on("SIGTERM", () => void shutdown());

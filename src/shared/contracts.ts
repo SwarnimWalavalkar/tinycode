@@ -1,6 +1,6 @@
 import type { PermissionMode } from "./permissions.js";
 
-export type ProviderId = "codex" | "claude" | "pi";
+export type ProviderId = "codex" | "claude" | "pi" | "cloudflare";
 export type TaskStatus = "idle" | "running" | "waiting" | "complete" | "failed" | "interrupted";
 
 export interface ProviderCapabilities {
@@ -158,12 +158,16 @@ export type ServerPacket =
       hasOlder: boolean;
       approvals: Approval[];
       queue: QueuedMessage[];
+      /** Cloud snapshot boundary; absent on local harnesses. */
+      cursor?: number;
     }
   | { type: "turn"; turn: Turn }
   | { type: "approvals"; taskId: string; approvals: Approval[] }
   | { type: "queue"; taskId: string; queue: QueuedMessage[] }
   | { type: "item"; item: TimelineItem }
   | { type: "item.patch"; taskId: string; id: string; patch: Partial<TimelineItem> }
+  | { type: "item.delta"; taskId: string; id: string; text: string }
+  | { type: "cloud.event"; taskId: string; cursor: number; packet: ServerPacket }
   | { type: "terminal.output"; terminalId: string; data: string }
   | { type: "terminal.ready"; terminalId: string; taskId: string }
   | { type: "terminal.exit"; terminalId: string; code: number }

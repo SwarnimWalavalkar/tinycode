@@ -1,0 +1,11 @@
+# Copy to .dev.vars in this directory. Never commit real credentials.
+# Local-only login token; never use this example for a deployed server.
+TINYCODE_AGENT_TOKEN="tinycode-local-smoke-token-not-a-secret"
+CLOUDFLARE_ACCOUNT_ID="00000000000000000000000000000000"
+CLOUDFLARE_GATEWAY_ID="default"
+# Leave blank for credential-free HTTP tests. For live inference, use an
+# account-scoped API token with Account > Workers AI > Read permission.
+CLOUDFLARE_API_TOKEN=""
+# Restrict local conversations AND title suggestions to Workers AI.
+TINYCODE_DEFAULT_MODEL="@cf/openai/gpt-oss-120b"
+TINYCODE_MODELS="@cf/openai/gpt-oss-120b"

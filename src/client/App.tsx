@@ -17,6 +17,7 @@ import {
   ChevronDown,
   ChevronRight,
   Circle,
+  Cloud,
   Folder,
   GitBranch,
   Globe2,
@@ -78,38 +79,32 @@ import {
   saveConnection,
   serverStorageKey,
 } from "./connection";
-import { TaskContextMenu, RenameTaskDialog, type TaskMenuPosition } from "./TaskNaming";
+import {
+  TaskContextMenu,
+  RenameTaskDialog,
+  DeleteTaskDialog,
+  type TaskMenuPosition,
+} from "./TaskNaming";
 import { ProviderMark, providerNames } from "./Harness";
 
 const Terminal = lazy(() => import("./Terminal"));
 const Files = lazy(() => import("./Files"));
 
-const welcomePhrases = [
-  "What should we work on today?",
-  "What should we build?",
-  "What's on your mind?",
-  "Where should we start?",
-  "What are we making next?",
-  "What are we building?",
-  "What are you thinking about?",
-  "Ready when you are.",
-  "What problem are we chasing?",
-  "What are you curious about?",
-  "What should we learn together?",
-  "What are you trying to understand?",
-];
-
 const fail = (error: unknown) =>
   setShell({ error: error instanceof Error ? error.message : String(error) });
 
-function savedSelection(): { provider: ProviderId; model: string; thinkingLevel: string | null } {
+function savedSelection(): {
+  provider: ProviderId;
+  model: string;
+  thinkingLevel: string | null;
+} {
   try {
     const value = JSON.parse(
       localStorage.getItem(serverStorageKey("tinycode-selection")) ?? "null",
     );
     if (
       value &&
-      ["codex", "claude", "pi"].includes(value.provider) &&
+      ["codex", "claude", "pi", "cloudflare"].includes(value.provider) &&
       typeof value.model === "string" &&
       value.model.length <= 200
     )
@@ -386,8 +381,8 @@ const Composer = memo(function Composer({
             aria-label={task ? "Message your agent" : "Describe your task"}
             placeholder={
               task
-                ? `Continue with ${providerNames[task.provider]}…`
-                : "Ask anything, or describe a task"
+                ? "Send a follow-up…"
+                : "Ask a question or describe a task…"
             }
             value={text}
             readOnly={sending}
@@ -537,7 +532,11 @@ function ApprovalCard({ approval }: { approval: Approval }) {
   async function respond(allow: boolean) {
     setBusy(true);
     try {
-      await post(`/tasks/${approval.taskId}/answer`, { id: approval.id, allow, text: answer });
+      await post(`/tasks/${approval.taskId}/answer`, {
+        id: approval.id,
+        allow,
+        text: answer,
+      });
     } catch (e) {
       fail(e);
       setBusy(false);
@@ -680,8 +679,8 @@ function Conversation({ task, connected }: { task: Task; connected: boolean }) {
           ) : (
             <div className="empty-conversation">
               <Mark />
-              <h2>A fresh start.</h2>
-              <p>Give {providerNames[task.provider]} something to work on.</p>
+              <h2>No messages yet</h2>
+              <p>Send a message to start this task.</p>
             </div>
           )}
         </div>
@@ -735,13 +734,21 @@ function Conversation({ task, connected }: { task: Task; connected: boolean }) {
         />
         <div className="composer-caption">
           <span>Shift + Enter for a new line</span>
-          <span title={task.cwd}>
-            {task.projectId === null ? <Folder size={12} /> : <GitBranch size={12} />}
-            {task.projectId === null
-              ? "Task workspace"
-              : task.worktreePath
-                ? "Worktree"
-                : "Current checkout"}
+          <span title={task.provider === "cloudflare" ? undefined : task.cwd}>
+            {task.provider === "cloudflare" ? (
+              <Cloud size={12} />
+            ) : task.projectId === null ? (
+              <Folder size={12} />
+            ) : (
+              <GitBranch size={12} />
+            )}
+            {task.provider === "cloudflare"
+              ? "Durable agent · VM on demand"
+              : task.projectId === null
+                ? "Task workspace"
+                : task.worktreePath
+                  ? "Worktree"
+                  : "Current checkout"}
           </span>
         </div>
       </div>
@@ -776,8 +783,8 @@ function Login() {
   return (
     <div className="login">
       <Mark />
-      <h1>Your workspace is here.</h1>
-      <p>Enter the access token for {connectionLabel()}.</p>
+      <h1>Connect to Durable Agent</h1>
+      <p>Enter your access token to connect.</p>
       <form onSubmit={(e) => void login(e)}>
         <input
           type="password"
@@ -833,7 +840,12 @@ function TaskButton({
         if (e.key === "ContextMenu" || (e.shiftKey && e.key === "F10")) {
           e.preventDefault();
           const bounds = e.currentTarget.getBoundingClientRect();
-          onMenu({ task, x: bounds.left + 16, y: bounds.bottom, trigger: e.currentTarget });
+          onMenu({
+            task,
+            x: bounds.left + 16,
+            y: bounds.bottom,
+            trigger: e.currentTarget,
+          });
         }
       }}
       title={`${task.title} · ${providerNames[task.provider]} · ${task.status}`}
@@ -851,8 +863,13 @@ function TaskButton({
 
 export function App() {
   const shell = useShell();
-  const createAttempt = useRef<{ key: string; task: Task; requestId: string } | null>(null);
-  const [welcomeIndex, setWelcomeIndex] = useState(0);
+  const cloudOnly = shell.providers.length === 1 && shell.providers[0].id === "cloudflare";
+  const createAttempt = useRef<{
+    key: string;
+    task: Task;
+    requestId: string;
+  } | null>(null);
+  const createRequest = useRef<{ key: string; id: string } | null>(null);
   const task = shell.tasks.find((t) => t.id === shell.activeTaskId);
   const [selectedProject, setSelectedProject] = useState(
     () => localStorage.getItem(serverStorageKey("tinycode-project")) ?? "",
@@ -873,6 +890,7 @@ export function App() {
   const [search, setSearch] = useState(false);
   const [taskMenu, setTaskMenu] = useState<TaskMenuPosition | null>(null);
   const [renaming, setRenaming] = useState<TaskMenuPosition | null>(null);
+  const [deleting, setDeleting] = useState<TaskMenuPosition | null>(null);
   const [sidebar, setSidebar] = useState(() => window.matchMedia("(min-width: 621px)").matches);
   const [files, setFiles] = useState(false);
   const [terminal, setTerminal] = useState(false);
@@ -895,6 +913,12 @@ export function App() {
     localStorage.setItem(serverStorageKey("tinycode-project"), selectedProject);
   }, [selectedProject]);
   useEffect(() => {
+    if (provider !== "cloudflare") return;
+    setBranch("");
+    setWorktree(false);
+    setOptions(false);
+  }, [provider]);
+  useEffect(() => {
     if (shell.providers.length && !shell.providers.find((p) => p.id === provider)?.available) {
       const available = shell.providers.find((p) => p.available);
       if (available) {
@@ -913,14 +937,18 @@ export function App() {
       }
       if ((e.metaKey || e.ctrlKey) && e.key === "j") {
         e.preventDefault();
-        if (getShell().activeTaskId) setTerminal((s) => !s);
+        const state = getShell();
+        const active = state.tasks.find((candidate) => candidate.id === state.activeTaskId);
+        if (active && active.provider !== "cloudflare") setTerminal((s) => !s);
       }
       if (e.key === "Escape") setShell({ error: null });
     }
     window.addEventListener("keydown", shortcut);
     return () => window.removeEventListener("keydown", shortcut);
   }, []);
-  const project = shell.projects.find((p) => p.id === (task ? task.projectId : selectedProject));
+  const project = shell.projects.find(
+    (p) => p.id === (task ? task.projectId : provider === "cloudflare" ? null : selectedProject),
+  );
   const projectlessTasks = shell.tasks.filter((t) => t.projectId === null);
   useEffect(() => {
     if (!shell.connected) return;
@@ -947,20 +975,32 @@ export function App() {
     ]);
     if (createAttempt.current?.key !== key) createAttempt.current = null;
     if (!createAttempt.current) {
+      if (createRequest.current?.key !== key)
+        createRequest.current = { key, id: crypto.randomUUID() };
       const newTask = await post<Task>("/tasks", {
-        projectId: project?.id ?? null,
+        requestId: createRequest.current.id,
+        projectId: provider === "cloudflare" ? null : (project?.id ?? null),
         provider,
         model: model.trim() || undefined,
         thinkingLevel,
         permissionMode,
         branch: useWorktree ? branch.trim() : undefined,
       });
-      createAttempt.current = { key, task: newTask, requestId: crypto.randomUUID() };
+      createAttempt.current = {
+        key,
+        task: newTask,
+        requestId: crypto.randomUUID(),
+      };
     }
     const attempt = createAttempt.current;
-    await post(`/tasks/${attempt.task.id}/send`, { text, images, requestId: attempt.requestId });
+    await post(`/tasks/${attempt.task.id}/send`, {
+      text,
+      images,
+      requestId: attempt.requestId,
+    });
     selectTask(attempt.task.id);
     createAttempt.current = null;
+    createRequest.current = null;
   }
   function chooseProject(projectId: string) {
     setSelectedProject(projectId);
@@ -969,8 +1009,8 @@ export function App() {
   }
   function newTask(projectId = "") {
     createAttempt.current = null;
+    createRequest.current = null;
     setPermissionMode(defaultPermissionMode[provider]);
-    setWelcomeIndex((index) => (index + 1) % welcomePhrases.length);
     selectTask(null);
     chooseProject(projectId);
     setOptions(false);
@@ -1003,10 +1043,10 @@ export function App() {
             {projectlessTasks.length > 0 && (
               <div className="project-group">
                 <div className="section-label">
-                  <span>SCRATCHPAD</span>
+                  <span>Recents</span>
                   <button
-                    aria-label="New scratchpad task"
-                    title="New scratchpad task"
+                    aria-label="New task"
+                    title="New task"
                     className="icon-button"
                     onClick={() => newTask()}
                   >
@@ -1027,17 +1067,19 @@ export function App() {
                 ))}
               </div>
             )}
-            <div className="section-label">
-              <span>PROJECTS</span>
-              <button
-                aria-label="Open a project"
-                title="Open a project"
-                className="icon-button"
-                onClick={() => setProjectDialog(true)}
-              >
-                <Plus size={14} />
-              </button>
-            </div>
+            {!cloudOnly && (
+              <div className="section-label">
+                <span>Projects</span>
+                <button
+                  aria-label="Open a project"
+                  title="Open a project"
+                  className="icon-button"
+                  onClick={() => setProjectDialog(true)}
+                >
+                  <Plus size={14} />
+                </button>
+              </div>
+            )}
             {shell.projects.map((p) => (
               <div className="project-group" key={p.id}>
                 <div className="project-heading">
@@ -1069,7 +1111,7 @@ export function App() {
                     />
                   ))}
                 {!shell.tasks.some((t) => t.projectId === p.id) && (
-                  <p className="no-tasks">A clean slate.</p>
+                  <p className="no-tasks">No tasks yet.</p>
                 )}
               </div>
             ))}
@@ -1083,9 +1125,9 @@ export function App() {
                 title={connection.url}
                 aria-haspopup="dialog"
               >
-                {isLocalServer() ? <Monitor size={15} /> : <Globe2 size={15} />}
+                {cloudOnly ? <Cloud size={15} /> : isLocalServer() ? <Monitor size={15} /> : <Globe2 size={15} />}
                 <div>
-                  <strong>{connectionLabel()}</strong>
+                  <strong>{connectionLabel(cloudOnly)}</strong>
                   <span role="status">
                     <i className={shell.connected ? "online" : "offline"} />
                     {shell.connected ? "Connected" : shell.loaded ? "Disconnected" : "Connecting…"}
@@ -1115,7 +1157,7 @@ export function App() {
                 <PanelLeftOpen size={17} />
               </button>
             )}
-            <span>{project?.name ?? "Scratchpad"}</span>
+            <span>{project?.name ?? "Recents"}</span>
             <ChevronRight size={13} />
             <strong>{task?.title ?? "New task"}</strong>
           </div>
@@ -1126,23 +1168,27 @@ export function App() {
                   <Status status={task.status} />
                   {task.status}
                 </span>
-                <span className="divider" />
-                <button
-                  className={`icon-button ${terminal ? "pressed" : ""}`}
-                  title="Toggle terminal · ⌘J"
-                  aria-label="Toggle terminal"
-                  onClick={() => setTerminal((v) => !v)}
-                >
-                  <TerminalSquare size={17} />
-                </button>
-                <button
-                  className={`icon-button ${files ? "pressed" : ""}`}
-                  title="Files and changes"
-                  aria-label="Toggle files"
-                  onClick={() => setFiles((v) => !v)}
-                >
-                  <PanelRight size={17} />
-                </button>
+                {task.provider !== "cloudflare" && (
+                  <>
+                    <span className="divider" />
+                    <button
+                      className={`icon-button ${terminal ? "pressed" : ""}`}
+                      title="Toggle terminal · ⌘J"
+                      aria-label="Toggle terminal"
+                      onClick={() => setTerminal((v) => !v)}
+                    >
+                      <TerminalSquare size={17} />
+                    </button>
+                    <button
+                      className={`icon-button ${files ? "pressed" : ""}`}
+                      title="Files and changes"
+                      aria-label="Toggle files"
+                      onClick={() => setFiles((v) => !v)}
+                    >
+                      <PanelRight size={17} />
+                    </button>
+                  </>
+                )}
               </>
             )}
           </div>
@@ -1155,34 +1201,50 @@ export function App() {
               ) : (
                 <div className="welcome">
                   <div className="welcome-prompt">
-                    <h1>{welcomePhrases[welcomeIndex]}</h1>
+                    <h1>What would you like to work on?</h1>
                   </div>
                   <div className="welcome-dock">
-                    <div className="workspace-controls">
-                      <button
-                        className="workspace-selector"
-                        aria-expanded={options}
-                        onClick={() => setOptions((o) => !o)}
-                      >
-                        <Folder size={14} />
-                        {project?.name ?? "No project"}
-                        <ChevronDown size={12} />
-                      </button>
-                      {project?.isGit && (
+                    <div
+                      className={`workspace-controls ${provider === "cloudflare" || cloudOnly ? "cloud-runtime" : ""}`}
+                    >
+                      {provider === "cloudflare" || cloudOnly ? (
                         <>
-                          <span className="controls-dot">/</span>
+                          <span className="cloud-runtime-mark">
+                            <Cloud size={14} />
+                          </span>
+                          <span>
+                            <strong>Durable agent</strong>
+                            <small>Runs in a Durable Object. Starts a Linux sandbox when needed.</small>
+                          </span>
+                        </>
+                      ) : (
+                        <>
                           <button
                             className="workspace-selector"
+                            aria-expanded={options}
                             onClick={() => setOptions((o) => !o)}
                           >
-                            <GitBranch size={13} />
-                            {worktree ? "New worktree" : "Current checkout"}
+                            <Folder size={14} />
+                            {project?.name ?? "No project"}
                             <ChevronDown size={12} />
                           </button>
+                          {project?.isGit && (
+                            <>
+                              <span className="controls-dot">/</span>
+                              <button
+                                className="workspace-selector"
+                                onClick={() => setOptions((o) => !o)}
+                              >
+                                <GitBranch size={13} />
+                                {worktree ? "New worktree" : "Current checkout"}
+                                <ChevronDown size={12} />
+                              </button>
+                            </>
+                          )}
                         </>
                       )}
                     </div>
-                    {options && (
+                    {options && provider !== "cloudflare" && (
                       <div className="task-options">
                         <label>
                           Project
@@ -1248,7 +1310,7 @@ export function App() {
                 </div>
               )}
             </div>
-            {task && terminal && (
+            {task && task.provider !== "cloudflare" && terminal && (
               <Suspense fallback={<div className="panel-loading">Opening terminal…</div>}>
                 <Terminal
                   key={task.id}
@@ -1259,13 +1321,13 @@ export function App() {
               </Suspense>
             )}
           </div>
-          {task && files && (
+          {task && task.provider !== "cloudflare" && files && (
             <Suspense fallback={<div className="panel-loading">Opening files…</div>}>
               <Files
                 key={task.id}
                 theme={dark ? "dark" : "light"}
                 taskId={task.id}
-                workspaceName={project?.name ?? "Scratchpad"}
+                workspaceName={project?.name ?? "Recents"}
                 onClose={() => setFiles(false)}
               />
             </Suspense>
@@ -1300,6 +1362,10 @@ export function App() {
             setRenaming(taskMenu);
             setTaskMenu(null);
           }}
+          onDelete={() => {
+            setDeleting(taskMenu);
+            setTaskMenu(null);
+          }}
         />
       )}
       {renaming && (
@@ -1309,6 +1375,21 @@ export function App() {
             const trigger = renaming.trigger;
             setRenaming(null);
             requestAnimationFrame(() => trigger.focus());
+          }}
+        />
+      )}
+      {deleting && (
+        <DeleteTaskDialog
+          task={deleting.task}
+          onClose={() => {
+            const trigger = deleting.trigger;
+            setDeleting(null);
+            requestAnimationFrame(() =>
+              (trigger.isConnected
+                ? trigger
+                : document.querySelector<HTMLButtonElement>("button")
+              )?.focus(),
+            );
           }}
         />
       )}

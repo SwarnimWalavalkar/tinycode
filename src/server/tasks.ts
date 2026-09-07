@@ -20,6 +20,8 @@ export async function createTask(
   );
   const project = input.projectId === null ? null : store.project(input.projectId);
   if (input.projectId !== null && !project) throw new Error("Project not found");
+  if (input.provider === "cloudflare" && project)
+    throw new Error("Cloudflare agents currently use their own projectless VM workspace");
   if (input.branch && !project?.isGit)
     throw new Error("Worktrees require a Git project with a commit");
 

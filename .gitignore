@@ -12,6 +12,9 @@ coverage/
 
 # Local runtime state and credentials
 .tinycode/
+.wrangler/
+.dev.vars
+.dev.vars.*
 .env
 .env.*
 !.env.example

@@ -1,5 +1,94 @@
 # v0 validation
 
+## Cloudflare simplification and review pass — 2026-09-07
+
+- Removed the pre-release local-cloud importer and unused request-bound protocol code;
+  retained the optional Node bridge, DO identities, SQLite schema and existing histories.
+  The default local database had zero legacy cloud tasks before this change.
+- Replaced JSON model metadata with the typed catalog; preserved native Pi model protocols.
+- `pnpm run check`: 106 root cases plus 29 Cloudflare cases (135 total, including
+  expanded parameterized cases), with both TypeScript projects checked. Existing tests
+  were updated for the smaller interfaces; no new regression suite was added.
+- Built the actual Sandbox image and directly exercised Linux/Python, 1 MB output clipped
+  to 128 KiB, deadline expiry, cancellation before startup, and cancellation of a
+  SIGTERM-resistant parent and forked child. No delayed workspace mutation survived.
+- Browser acceptance through real Workers AI and the Worker/DO/Sandbox path returned
+  `Linux` and `42`. Existing cloud conversations remained visible after restart.
+  Stop interrupted a 60-second command at 33 seconds; the retained tool result reports
+  interruption rather than the final echo. Reload preserved both the outputs and interrupted turns.
+- Deferred: attachment claims that precede rejected acceptance can retain unused R2 objects.
+  Fixing this safely requires durable per-request reservations/reconciliation across DOs,
+  not a best-effort rollback that could release a concurrently accepted attachment.
+  This is a single-user storage-retention limitation, not cross-user access.
+- Intentionally retained original request fingerprints after queue edits: they identify the
+  accepted submission for retry deduplication. Edited queue content is not a new submission.
+- Production deployment, deliberately escaped process groups, and hostile tampering with
+  supervisor control files were not tested or claimed supported. No deployment was performed.
+
+## AI Gateway · September 7, 2026
+
+Cloudflare-mode inference and naming now use AI Gateway's account REST API with a Cloudflare token,
+not a direct OpenAI key. Existing model IDs are preserved; Workers AI and additional external models
+use explicit deployment-owned capability definitions. The shipped Workers AI preset is GPT OSS 120B.
+
+- `pnpm run check` passed 107 root tests and 31 Cloudflare tests. Eight new gateway tests run the real
+  Pi harness and SDK against controlled SSE/HTTP responses: qualified model IDs, account-scoped URLs,
+  Cloudflare authentication and gateway headers, Responses reasoning/text, Chat Completions streaming
+  tool arguments and result replay, images, capability validation, cancellation, and 401 propagation
+  without direct-provider fallback. No model service is contacted by these tests.
+- The credential-free local Wrangler/workerd HTTP smoke passed using a fake account ID and no
+  inference token. Its missing-token error, task transcript/receipts, R2 ownership, and reconnect
+  remain durable. The smoke accepts the directory's eventual task-index update after a snapshot.
+- The UI/Worker/Sandbox dry-run build passed with the gateway configuration and no new dependencies.
+
+No live Cloudflare AI Gateway or Workers AI inference call was made. Account permissions, funding,
+enabled upstream models, and provider-specific behavior still need a credentialed deployment test.
+The example Workers AI preset leaves reasoning control at the model default rather than claiming
+unverified effort levels. Cost placeholders in Pi are not billing measurements; consult Cloudflare.
+
+## Cloud-authoritative deployment · September 7, 2026
+
+This supersedes the request-bound Cloudflare architecture described in the September 4 entry below.
+The Worker now serves the React assets and API directly. Task DO SQLite owns transcripts, Pi history,
+accepted requests, queues, turns, and replay events. A directory DO provides a retryable task index and
+hibernating WebSocket subscriptions; R2 stores attachments. Node is an optional proxy for cloud tasks.
+
+- `pnpm run check` reported 107 root test cases plus 23 Cloudflare test cases (130 total, including expanded parameterized cases), with both TypeScript projects checked.
+  The obsolete NDJSON-adapter tests were replaced with cloud-proxy coverage. New SQLite-backed DO tests
+  cover detached acceptance/completion, restart recovery without effect replay, steering, ordered queues,
+  bounded queue events, stale image edits, idempotent legacy import/receipts, retryable publication,
+  cursor expiry, authentication and the snapshot/live-event subscription race.
+- `pnpm run build:cloudflare` passed: 351 static assets, Worker bundle, all three DO bindings, R2 binding,
+  and a real build of the pinned Sandbox Docker image. This was a dry-run, not a deployment.
+- `pnpm run test:cloudflare:http` passed against local Wrangler/workerd, then passed again with the same
+  persisted state after restarting Wrangler. It exercises real DO SQL/alarm dispatch, accepted-request
+  deduplication, retained transcript and errors, R2 bytes and task ownership, login/origin checks, and
+  hibernating WebSocket snapshots/reconnect. Its model execution deliberately fails for a missing API key;
+  no model credential or billable provider request is used.
+- The standalone browser UI was checked against that local Worker: token login, cloud task discovery,
+  persisted transcript, R2-backed image preview, and read-state updates worked without a Node server.
+- `pnpm run test:smoke` passed the existing production Node HTTP/WebSocket, filesystem, Git/worktree,
+  real PTY and image-upload smoke paths.
+
+Accepted but unstarted work survives reconstruction. A host restart during execution is reported as
+an interrupted turn and pauses pending work; this does not claim transparent in-flight continuation or
+exactly-once external effects. No actual Cloudflare account deployment, successful remote provider/VM
+round-trip, load benchmark, workspace persistence, private-repository provisioning or multi-user
+authorization was validated or added here. See the package README for reproducible local checks.
+
+## Cloudflare durable agent · September 4, 2026
+
+The monorepo now includes an optional Cloudflare Worker package. The production route maps each Tinycode task ID to one `DurablePiAgent` Durable Object, persists Pi messages in bounded DO SQLite chunks, authenticates the Node adapter with a Worker transport token over HTTPS, and exposes a same-ID Cloudflare Sandbox through `vm_start`, `vm_exec`, `vm_status`, and `vm_destroy`. The VM boundary has both a Cloudflare adapter and an in-memory test double. OpenAI is the only configured Pi provider in this first cut.
+
+- `pnpm run check` passed 109 tests across 15 root test files, followed by the Cloudflare package typecheck and eleven focused tests. The Cloudflare tests cover authenticated health/model discovery, task-scoped NDJSON content and tool projection, failed-row cleanup, stream cancellation, provider failure and remote interruption, HTTPS-only credential transport and URL redaction, multi-message Pi event identity, Unicode-safe large image-bearing history split across bounded SQLite rows, VM path normalization, workspace-start failure, process-group termination on interrupt and timeout, completed-process races, and permanent VM destruction.
+- `pnpm run build` passed the production UI build. `pnpm run build:cloudflare` passed Wrangler's dry-run bundle and built the pinned `cloudflare/sandbox:0.12.4` Docker image; Wrangler recognized both Durable Object bindings and the container definition.
+- A fresh frozen pnpm install ran and passed `workerd`'s platform validation hook. `wrangler dev` then built the Sandbox image, started the Worker through local `workerd`, and served an authenticated `GET /v1/health` with the expected protocol. This validates local Worker startup without claiming a remote deployment.
+- CI has a dedicated Ubuntu job for that Worker and Sandbox-image build in addition to the existing cross-package checks. Dependency versions and install-script decisions are explicit so pnpm's supply-chain checks apply to the new workspace.
+- `pnpm run test:smoke` passed the existing disposable production HTTP/WebSocket, filesystem, real PTY, worktree, Git, image-upload, and authentication paths.
+- A production browser run used a controlled authenticated Worker endpoint through the real Tinycode Node adapter. Cloudflare appeared as the only ready option with its remote model and thinking catalog, the composer showed the durable-agent/managed-VM boundary, task creation produced a projectless task, and the completed transcript projected thought, `vm_exec`, and final response events. Local terminal and file controls were absent for that task. Light and dark layouts were inspected; browser warnings and errors were empty.
+
+No Worker was deployed to a Cloudflare account and no live provider request or Cloudflare Sandbox command was executed. DO persistence, container wake/sleep behavior, billing limits, and remote-network behavior therefore remain deployment validation items. The documented first-cut VM filesystem is ephemeral after an idle Sandbox sleep, and third-party credentials are not injected into it.
+
 ## Shared explorer design and test page · September 3, 2026
 
 - The standalone `/explorer.html` uses the same Trees, code preview, and Diffs components as the task sidebar, with an in-memory sample workspace. It is a test surface; the main product keeps the conversation primary and offers a resizable side panel with temporary expansion.
@@ -197,3 +286,36 @@ node scripts/terminal-smoke.mjs
 The additional `model-smoke.mjs`, `steering-smoke.mjs`, `title-smoke.mjs`, and `image-smoke.mjs` scripts also make real model calls. The sections above describe their scope and invocation. Use disposable data and your own authenticated harness accounts.
 
 Server restart recovery is covered at the SQLite level; resuming all three native harnesses after a server restart has not been separately exercised. Approval UI, harness interruption, and subagent projection need broader real-provider coverage. Terminal replay retains recent bytes rather than a full alternate-screen snapshot. The README records the product limits that follow from this deliberately small implementation.
+## Cloudflare browser acceptance — 2026-09-07
+
+Manually exercised the actual UI at `http://localhost:8794` using the Codex in-app
+browser, local Wrangler Durable Objects/R2, local Docker Sandbox, and live GPT OSS 120B
+inference through AI Gateway. No new regression tests were added for this pass.
+
+Task `53078a03-049f-4ccb-80c1-d97fd359466a`, renamed **Cloudflare browser acceptance — passed**,
+retains the transcript and expandable tool evidence:
+
+- Login, new task, streaming response, and a clean composer without the active prompt in the queue.
+- Automatic sandbox start: `uname -s` returned `Linux`; Python multiplication returned `42`.
+- Created and read `/workspace/acceptance.txt`, returning `ORBIT_742`.
+- Closed the browser tab during a 25-second command. Reopened it and observed `DETACHED_OK`
+  and the queued follow-up's successful file read, with the queue drained.
+- Clicked Stop during a 60-second VM command. The interrupt request completed in 111 ms;
+  the turn became interrupted without the command's completion marker as output.
+- Stopped and restarted Wrangler with the same local state. History remained visible;
+  the next model turn recalled `ORBIT_742`, called `vm_start` / `vm_status`, and ran Python
+  again, returning `56`.
+- Steered a running turn through the UI; its final response included `STEERING_RECEIVED`.
+- Generated a title suggestion and saved a manual rename through the task menu.
+- Destroyed the test-only sandbox and confirmed `vm_status` returned `destroyed`, with
+  conversation history retained. Its temporary files are disposable, not durable artifacts.
+
+The first browser attempt exposed a missing Python executable after the ID-length fix;
+the Docker image now installs Python 3, pip, and venv. The acceptance above was repeated
+with that rebuilt image. Root and Cloudflare TypeScript checks passed, and the actual
+dev command built and served the UI, Worker, and Docker image. Interrupted/failed turns
+now show their outcome in the work-summary label rather than the generic “Worked”.
+
+Scope: local developer flow only, not a deployed Cloudflare canary, long-idle wakeup,
+workspace persistence across container replacement, image inference, private-repository
+credentials, or exhaustive production reliability. The GPT OSS preset is text-only.

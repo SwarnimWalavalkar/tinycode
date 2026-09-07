@@ -43,6 +43,9 @@ export function completedTurn(items: TimelineItem[]) {
 export function workLabel(turn?: Turn) {
   if (!turn?.finishedAt) return turn?.status === "interrupted" ? "Work interrupted" : "Worked";
   const duration = elapsedTime(turn.startedAt, Date.parse(turn.finishedAt));
+  if (turn.status === "interrupted")
+    return duration ? `Interrupted after ${duration}` : "Work interrupted";
+  if (turn.status === "failed") return duration ? `Failed after ${duration}` : "Work failed";
   return duration ? `Worked for ${duration}` : "Worked";
 }
 

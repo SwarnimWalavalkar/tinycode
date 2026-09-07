@@ -1,0 +1,46 @@
+{
+  "$schema": "./node_modules/wrangler/config-schema.json",
+  "name": "tinycode-cloudflare-agent",
+  "main": "src/index.ts",
+  "compatibility_date": "2026-08-31",
+  "compatibility_flags": ["nodejs_compat", "global_fetch_strictly_public"],
+  "workers_dev": true,
+  "assets": {
+    "directory": "../../dist",
+    "binding": "ASSETS",
+    "not_found_handling": "single-page-application",
+    "run_worker_first": ["/api/*", "/v1/*", "/socket"]
+  },
+  "r2_buckets": [
+    { "binding": "ATTACHMENTS", "bucket_name": "tinycode-attachments" }
+  ],
+  "observability": {
+    "enabled": true,
+    "logs": { "enabled": true, "invocation_logs": true }
+  },
+  "durable_objects": {
+    "bindings": [
+      { "name": "AGENTS", "class_name": "DurablePiAgent" },
+      { "name": "SANDBOX", "class_name": "Sandbox" },
+      { "name": "DIRECTORY", "class_name": "TaskDirectory" }
+    ]
+  },
+  "migrations": [
+    { "tag": "v1", "new_sqlite_classes": ["DurablePiAgent", "Sandbox"] },
+    { "tag": "v2", "new_sqlite_classes": ["TaskDirectory"] }
+  ],
+  "containers": [
+    {
+      "class_name": "Sandbox",
+      "image": "./Dockerfile",
+      "instance_type": "lite",
+      "max_instances": 5
+    }
+  ],
+  "vars": {
+    "CLOUDFLARE_ACCOUNT_ID": "62982f7504a18827e18e974988c83e96",
+    "CLOUDFLARE_GATEWAY_ID": "default",
+    "TINYCODE_DEFAULT_MODEL": "@cf/openai/gpt-oss-20b",
+    "TINYCODE_MODELS": "@cf/openai/gpt-oss-20b,@cf/openai/gpt-oss-120b"
+  }
+}

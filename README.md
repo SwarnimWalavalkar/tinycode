@@ -1,6 +1,6 @@
 # Tinycode
 
-A small web workspace for Codex, Claude Code, and Pi. Tinycode wraps the harnesses you already use. It does not implement an agent loop, tools, or model routing.
+A small web workspace for Codex, Claude Code, Pi, and an optional Cloudflare-hosted agent. The local options wrap harnesses you already use; they do not reimplement their agent loops, tools, or model routing. The Cloudflare option is different: a workspace package runs Pi's agent core inside a Durable Object and gives it explicit tools for a lazily created Linux VM.
 
 **Early alpha · internal beta testing.** Expect rough edges and changing protocols. The same single-user server runs on your laptop or a remote development machine. Projects, credentials, harness processes, and shells live on that server. Each tester should run their own instance.
 
@@ -19,6 +19,7 @@ Install a harness and sign in using its own CLI on the machine that will run the
 | Codex       | [Official CLI setup](https://developers.openai.com/codex/cli)                              | `codex`                    |
 | Claude Code | [Official setup](https://code.claude.com/docs/en/overview)                                 | `claude`                   |
 | Pi          | [Coding agent setup](https://github.com/earendil-works/pi/tree/main/packages/coding-agent) | `pi`                       |
+| Cloudflare  | [Deploy the included Worker](packages/cloudflare-agent/README.md)                           | Worker URL                 |
 
 Linux installs compile the terminal bindings from source, so Python 3, Make, and a C/C++ compiler are required. On Debian/Ubuntu, install them before installing dependencies:
 
@@ -52,7 +53,7 @@ Examples below use npm; you can substitute `pnpm run` or `bun run` for `npm run`
 
 Open `http://127.0.0.1:4737` for development, or `http://127.0.0.1:4738` after building and starting the server. Choose a harness and model, and send a task. **New task** starts with **No project** selected. To work in an existing folder, use the **+** beside Projects to browse the connected server’s folders or enter a path, then select the project in the composer or sidebar. The model selector reads the installed harness's catalog and also accepts explicit model IDs. Both selections remain visible during work. You can change models between turns in the same native conversation.
 
-The harness picker shows only installed harnesses with authentication configured. Tinycode asks Codex for its account state, Claude Code for its login status, and Pi for its credential-aware model catalog without sending a prompt. After signing in on the server, use **Refresh harnesses** in the picker. Checks do not verify remaining credits or guarantee a provider will accept a request.
+The harness picker shows only ready execution options. Tinycode asks Codex for its account state, Claude Code for its login status, Pi for its credential-aware model catalog, and the configured Cloudflare Worker for its authenticated health state without sending a prompt. After changing configuration, use **Refresh harnesses** in the picker. Checks do not verify remaining credits or guarantee a provider will accept a request.
 
 Tinycode uses each harness's existing authentication and settings. Your provider's usage limits and charges apply, including the small-model requests used for task names. Stop the server with Ctrl+C when you are done; this interrupts active turns and closes its terminals.
 
@@ -60,9 +61,36 @@ If a native dependency fails to install, use your package manager's verbose outp
 
 Projectless tasks appear under **Scratchpad** in the sidebar. Each has its own persistent folder at `$TINYCODE_DATA_DIR/workspaces/<task-id>` (under `~/.tinycode` by default), with the same file editor, terminal, harness, and resume support. No Git repository is created automatically. Files remain after closing the task or restarting Tinycode.
 
+## Cloudflare durable agent
+
+The [Cloudflare workspace](packages/cloudflare-agent/README.md) deploys the same React UI and its durable-agent backend entirely on Cloudflare; no Node server is required. One `DurablePiAgent` DO per task owns Pi's agent loop, SQLite conversation history, UI transcript, accepted messages, queue, and replay events. A directory DO indexes tasks and fans out WebSocket updates, R2 stores image attachments, and a same-ID Sandbox container starts only when the agent uses its VM tools.
+
+Model calls go through Cloudflare AI Gateway, using a Cloudflare inference token kept in the trusted Worker/DO environment, never in the VM. This is a single-user deployment protected by a separate non-empty access token. Use a strong random token; short or guessable tokens expose all sessions and billable tools:
+
+```sh
+pnpm --dir packages/cloudflare-agent exec wrangler r2 bucket create tinycode-attachments
+pnpm --dir packages/cloudflare-agent exec wrangler secret put TINYCODE_AGENT_TOKEN
+pnpm --dir packages/cloudflare-agent exec wrangler secret put CLOUDFLARE_API_TOKEN
+pnpm run deploy:cloudflare
+```
+
+Before deploying, set `CLOUDFLARE_ACCOUNT_ID` in the Worker configuration and create/select your AI Gateway. The inference token requires Workers AI Read permission; external models use Cloudflare Unified Billing. The picker supports external models and Workers AI, with GPT OSS 120B included for Cloudflare-hosted inference. See the [gateway setup and migration instructions](packages/cloudflare-agent/README.md#ai-gateway-configuration).
+
+Open the printed HTTPS Worker URL and sign in with the access token. Optionally, connect the local Node app to show cloud tasks alongside local harnesses:
+
+```sh
+export TINYCODE_CLOUDFLARE_AGENT_URL=https://tinycode-cloudflare-agent.example.workers.dev
+export TINYCODE_CLOUDFLARE_AGENT_TOKEN=replace-with-the-same-access-token
+pnpm run dev
+```
+
+The cloud remains authoritative through either UI. Closing the browser or Node proxy does not stop accepted work; reconnect restores the transcript. A host restart during a turn marks it interrupted and pauses queued work instead of blindly repeating uncertain external effects. Legacy local Cloudflare histories are imported idempotently on bootstrap, with local originals retained.
+
+Cloud tasks use a remote, projectless workspace. VM commands and output appear in the transcript, but remote terminal, file explorer, and diff controls are not implemented. DO history and R2 attachments persist; VM files remain ephemeral across idle sleep or destruction. See the package README for deployment, migration, and the credential-free local Cloudflare smoke test.
+
 The thinking picker beside the model shows the selected level. Available levels come from the installed harness for that model; **Default** inherits harness settings. Change it between turns. Changing models resets thinking to Default.
 
-Task names are generated in the background from the first message, using a small model through the selected harness's credentials. Right-click a task and choose **Rename…** to edit its name or use a suggestion from the conversation. Suggestions never overwrite your input, and saved names survive refreshes. A temporary message-based label remains if naming is unavailable.
+Local task names are generated in the background from the first message, using a small model through the selected harness's credentials. Cloud tasks use a message-based initial name and support model-generated suggestions on request. Right-click a task and choose **Rename…** to edit its name or use a suggestion from the conversation. Suggestions never overwrite your input, and saved names survive refreshes. A temporary message-based label remains if naming is unavailable.
 
 Paste images, drop them onto the composer, or use **+** to attach them. Previews sit on an animated shelf above the input, with upload status, removal, and retry. Images can be sent on their own or with text, including in queued or steered messages. Transcript thumbnails appear above your message and open the full image when clicked. PNG, JPEG, WebP, and GIF are supported: up to six images, 5 MB each, and 10 MB per message.
 
@@ -156,19 +184,21 @@ Configuration is read from the server process environment. Tinycode does not aut
 | `TINYCODE_CODEX_BIN`          | `codex` on PATH                                                |
 | `TINYCODE_CLAUDE_BIN`         | `claude` on PATH                                               |
 | `TINYCODE_PI_BIN`             | `pi` on PATH                                                   |
+| `TINYCODE_CLOUDFLARE_AGENT_URL` | None; deployed Cloudflare agent Worker URL                   |
+| `TINYCODE_CLOUDFLARE_AGENT_TOKEN` | None; Worker transport token                                |
 | `TINYCODE_CODEX_TITLE_MODEL`  | Small model from the native catalog, preferring `gpt-5.4-mini` |
 | `TINYCODE_CLAUDE_TITLE_MODEL` | `haiku`                                                        |
 | `TINYCODE_PI_TITLE_MODEL`     | Small model from the task's provider; accepts `provider/model` |
 
 ## Included
 
-- Real streaming conversations with all three harnesses, native session IDs, follow-up turns, and interruption.
+- Real streaming conversations with all three local harnesses, plus the optional Durable Object agent, native session IDs, follow-up turns, and interruption.
 - A persistent message queue above the composer. While a task runs, choose Queue for the next turn or Steer for native live input. Drag the left icon to change delivery order, use the pencil to edit text and images in the main composer, or remove a row with the trash button. Save keeps the message's queue position; save/cancel restores your previous composer draft. The focused drag handle also supports Alt + Up/Down. Stop, failure, and restart preserve unsent messages for explicit resumption.
 - Searchable native model catalogs, remembered draft selections, and the model reported by each running harness. Logos are bundled from official sources; see [asset attribution](src/client/assets/harnesses/README.md).
 - Model-specific thinking levels, remembered for new tasks and saved with existing tasks.
 - Codex command/file approval prompts; Claude tool permission prompts; basic Pi extension prompts.
-- A permissions picker in the composer, saved per task and editable between turns. Codex supports Ask for approval, Auto-accept edits, Approve for me (native auto review), and Full access. Claude exposes its native manual, edit, auto, plan, pre-approved-only, and bypass modes. Pi offers configured tools, a read/grep/find/ls allowlist, or no tools; these are tool settings, not an OS sandbox. Pi extensions still run. Native rules and managed policies remain authoritative; unavailable modes surface an error rather than silently substituting another mode. See [Claude permissions](https://code.claude.com/docs/en/agent-sdk/permissions) and [Pi's tool options](https://github.com/earendil-works/pi/tree/main/packages/coding-agent#cli-reference).
-- New tasks start with workspace edits and explicit escalation for Codex, manual approval for Claude, and configured tools for Pi. Full access is never carried to a different harness or a new task. Tasks created before the picker keep their existing native settings until you select an explicit mode. Permissions control the harness on the connected server; your manual terminal and file-editor actions are separate.
+- A permissions picker in the composer, saved per task and editable between turns. Codex supports Ask for approval, Auto-accept edits, Approve for me (native auto review), and Full access. Claude exposes its native manual, edit, auto, plan, pre-approved-only, and bypass modes. Pi offers configured tools, a read/grep/find/ls allowlist, or no tools; these are tool settings, not an OS sandbox. The Cloudflare option exposes only its managed VM tools. Pi extensions still run locally. Native rules and managed policies remain authoritative; unavailable modes surface an error rather than silently substituting another mode. See [Claude permissions](https://code.claude.com/docs/en/agent-sdk/permissions) and [Pi's tool options](https://github.com/earendil-works/pi/tree/main/packages/coding-agent#cli-reference).
+- New tasks start with workspace edits and explicit escalation for Codex, manual approval for Claude, configured tools for local Pi, and managed VM tools for Cloudflare. Full access is never carried to a different harness or a new task. Tasks created before the picker keep their existing native settings until you select an explicit mode. Permissions control the harness on the connected server; your manual terminal and file-editor actions are separate.
 - Provider-reported tool and subagent activity in collapsible rows.
 - A quiet transcript with rounded user messages, plain assistant responses, grouped live activity, and a saved “Worked for…” summary for completed turns. Expand groups to inspect individual actions and their raw details.
 - Multiple tasks, independently running on the server. Browser disconnects do not cancel work.
@@ -183,7 +213,7 @@ Configuration is read from the server process environment. Tinycode does not aut
 
 ## Deliberate v0 limits
 
-- Harness settings, authentication, tools, compaction, permissions, and agent execution stay native. Tinycode does not promise feature parity with every native interactive command. Unsupported Codex reverse requests are explicitly declined and surfaced.
+- Local harness settings, authentication, tools, compaction, permissions, and agent execution stay native. Tinycode does not promise feature parity with every native interactive command. Unsupported Codex reverse requests are explicitly declined and surfaced. The Cloudflare package embeds Pi's agent core and accesses configured models through AI Gateway; per-model capabilities require validation.
 - Subagents are a display integration. Tinycode does not create a separate agent orchestrator. Pi subagents depend on installed extensions and the events they expose.
 - Non-image attachments, session import, checkpoints, custom plugins, and automated Git workflows are deferred.
 - Model catalogs load on demand and are cached for one minute. Tinycode does not silently replace a chosen model when catalog loading fails. Tasks created before model tracking show "Choose model" until selected or reported by the harness on their next turn.
@@ -191,6 +221,7 @@ Configuration is read from the server process environment. Tinycode does not aut
 - Worktrees are retained. There is no automatic branch deletion, dependency installation, `.env` copying, or cleanup. Use normal Git commands when you are finished with one.
 - Files and Git status refresh on opening the panel or using Refresh. Text editing is deliberately basic. An optimistic content revision rejects a save when the file changed since opening; this is not an atomic cross-process editor lock.
 - Transcript history is paged in windows of 120 rows. Earlier pages are explicit, with a return to the live tail. Terminal reconnect replays the last 128 KiB of bytes; this is not a full terminal-state snapshot and complex fullscreen applications may need redraw.
+- Cloudflare agent history survives Durable Object hibernation, but remote VM files are ephemeral across an idle Sandbox sleep and are not mounted into Tinycode's local terminal, tree, or diff views. A live Cloudflare deployment and provider call are not part of the repository's offline checks.
 
 ## Architecture and evidence
 
@@ -199,13 +230,22 @@ The [reference study](docs/references.md) records what we borrowed from bb, Pase
 ```text
 Browser: React shell + per-row transcript subscriptions + lazy xterm
        │ HTTP commands / WebSocket subscriptions
-Node server: tasks + SQLite + native process ownership + filesystem/Git
+Node server: tasks + SQLite + adapter lifecycle + local filesystem/Git
        ├── Codex app-server (JSONL)
        ├── Claude Agent SDK → installed Claude Code
-       └── Pi RPC (JSONL)
+       ├── Pi RPC (JSONL)
+       └── optional cloud proxy (no local execution/history ownership)
+
+Browser -> Cloudflare Worker (same UI assets + authenticated API)
+       ├── TaskDirectory DO: task index + WebSocket fanout
+       ├── R2: image attachments
+       └── one DurablePiAgent DO per task
+            ├── Pi SDK + SQLite history/transcript/queue/events
+            ├── alarms: detached execution and recovery
+            └── VM tools → same-ID Sandbox container
 ```
 
-`src/shared/contracts.ts` is the small wire contract. `src/server/adapters` contains only native integrations. `runtime.ts` owns task execution and coalesces display updates; the harness still owns every agent decision. `src/client/state.ts` keeps token updates scoped to individual rows. Terminal output bypasses React entirely.
+`src/shared/contracts.ts` and `src/shared/cloudflare-agent.ts` are the small wire contracts. `src/server/adapters` translates local native harnesses into one UI projection. `runtime.ts` owns local task delivery; cloud task delivery and UI events live in the DO, with `cloud-authority.ts` providing an optional disposable Node proxy. Local harnesses own their agent decisions; the optional `packages/cloudflare-agent` runtime delegates them to Pi's agent core. `src/client/state.ts` keeps token updates scoped to individual rows. Terminal output bypasses React entirely.
 
 ```sh
 npm run check

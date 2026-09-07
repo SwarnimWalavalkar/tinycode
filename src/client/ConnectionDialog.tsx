@@ -52,7 +52,7 @@ export default function ConnectionDialog({ onClose }: { onClose: () => void }) {
   return (
     <Dialog title="Server connection" onClose={onClose}>
       <form className="connection-form" onSubmit={(event) => void connect(event)}>
-        <p>Connect to Tinycode on this machine or another server.</p>
+        <p>Connect to a local or hosted Tinycode server.</p>
         <label htmlFor="server-url">Server URL</label>
         <input
           id="server-url"
@@ -77,7 +77,7 @@ export default function ConnectionDialog({ onClose }: { onClose: () => void }) {
           maxLength={80}
           onChange={(event) => setName(event.target.value)}
           disabled={busy}
-          placeholder="Defaults to the server hostname"
+          placeholder="Optional connection label"
           autoComplete="off"
         />
         <label htmlFor="server-token">

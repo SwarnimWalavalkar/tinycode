@@ -25,7 +25,7 @@ export class TaskTitles {
     if (existing) return existing;
     const state = this.store.titleState(id);
     const task = this.store.task(id);
-    if (this.closing || !task || state?.state !== "pending") return Promise.resolve();
+    if (this.closing || !task || task.provider === "cloudflare" || state?.state !== "pending") return Promise.resolve();
     const job = this.generate(`auto:${id}`, task, this.store.titleMessages(id, true))
       .then(({ title }) => {
         if (!this.closing && this.store.applyTitle(id, title, state.revision)) this.changed();

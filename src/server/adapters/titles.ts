@@ -170,6 +170,9 @@ async function rpcTitle(context: TitleContext, kind: "codex" | "pi") {
 }
 export const codexTitle: TitleGenerator = (context) => rpcTitle(context, "codex");
 export const piTitle: TitleGenerator = (context) => rpcTitle(context, "pi");
+export const cloudflareTitle: TitleGenerator = async () => {
+  throw new Error("Cloud task naming is owned by the Cloudflare task API");
+};
 export const claudeTitle: TitleGenerator = async (context) => {
   context.signal.throwIfAborted();
   const model = process.env.TINYCODE_CLAUDE_TITLE_MODEL ?? "haiku";

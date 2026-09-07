@@ -1,9 +1,9 @@
 import { useEffect, useLayoutEffect, useRef, useState, type FormEvent } from "react";
 import { createPortal } from "react-dom";
-import { Pencil, RefreshCw } from "lucide-react";
+import { Pencil, RefreshCw, Trash2 } from "lucide-react";
 import type { Task } from "../shared/contracts";
 import { MAX_TASK_TITLE, type TitleSuggestion } from "../shared/titles";
-import { api, getShell, post, setShell } from "./state";
+import { api, getShell, post, setShell, selectTask } from "./state";
 import Dialog from "./Dialog";
 
 export interface TaskMenuPosition {
@@ -16,10 +16,12 @@ export function TaskContextMenu({
   position,
   onClose,
   onRename,
+  onDelete,
 }: {
   position: TaskMenuPosition;
   onClose: () => void;
   onRename: () => void;
+  onDelete: () => void;
 }) {
   const ref = useRef<HTMLDivElement>(null);
   useLayoutEffect(() => {
@@ -49,6 +51,14 @@ export function TaskContextMenu({
       role="menu"
       aria-label="Task actions"
       onKeyDown={(e) => {
+        if (e.key === "ArrowDown" || e.key === "ArrowUp") {
+          e.preventDefault();
+          const buttons = Array.from(ref.current!.querySelectorAll("button"));
+          const index = buttons.indexOf(document.activeElement as HTMLButtonElement);
+          buttons[
+            (index + (e.key === "ArrowDown" ? 1 : -1) + buttons.length) % buttons.length
+          ]?.focus();
+        }
         if (e.key === "Escape" || e.key === "Tab") {
           e.preventDefault();
           onClose();
@@ -59,8 +69,63 @@ export function TaskContextMenu({
         <Pencil size={14} />
         Rename…
       </button>
+      <button role="menuitem" className="destructive" onClick={onDelete}>
+        <Trash2 size={14} />
+        Delete session…
+      </button>
     </div>,
     document.body,
+  );
+}
+
+export function DeleteTaskDialog({ task, onClose }: { task: Task; onClose: () => void }) {
+  const [saving, setSaving] = useState(false);
+  const [error, setError] = useState("");
+  async function remove() {
+    if (saving) return;
+    setSaving(true);
+    setError("");
+    try {
+      await api(`/tasks/${task.id}`, { method: "DELETE" });
+      if (getShell().activeTaskId === task.id) selectTask(null);
+      setShell({ tasks: getShell().tasks.filter((t) => t.id !== task.id) });
+      onClose();
+    } catch (error) {
+      setError(error instanceof Error ? error.message : String(error));
+      setSaving(false);
+    }
+  }
+  return (
+    <Dialog
+      title="Delete session"
+      className="delete-session-dialog"
+      onClose={() => {
+        if (!saving) onClose();
+      }}
+    >
+      <p className="delete-session-description">
+        The conversation, queued messages, and attachments will be permanently deleted.
+      </p>
+      <p className="delete-session-note">
+        {task.provider === "cloudflare"
+          ? "The sandbox and all files inside it will also be deleted. Save anything you need first."
+          : "Your local files and original harness history will stay. Any open session terminals will close."}
+      </p>
+      <p className="delete-session-warning">This cannot be undone.</p>
+      {error && (
+        <p className="form-error" role="alert">
+          {error}
+        </p>
+      )}
+      <div className="dialog-actions">
+        <button className="button secondary" disabled={saving} onClick={onClose} autoFocus>
+          Cancel
+        </button>
+        <button className="button destructive" disabled={saving} onClick={() => void remove()}>
+          {saving ? "Deleting…" : "Delete session"}
+        </button>
+      </div>
+    </Dialog>
   );
 }
 
