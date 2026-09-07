@@ -1,6 +1,6 @@
 {
   "$schema": "./node_modules/wrangler/config-schema.json",
-  "name": "tinycode-cloudflare-agent",
+  "name": "tiny-durable-agent",
   "main": "src/index.ts",
   "compatibility_date": "2026-08-31",
   "compatibility_flags": ["nodejs_compat", "global_fetch_strictly_public"],
@@ -31,6 +31,8 @@
   ],
   "containers": [
     {
+      // Preserve the existing container application when renaming the Worker.
+      "name": "tinycode-cloudflare-agent-sandbox",
       "class_name": "Sandbox",
       "image": "./Dockerfile",
       "instance_type": "lite",

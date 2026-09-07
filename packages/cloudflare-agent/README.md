@@ -124,7 +124,7 @@ are available through the task menu. No automatic context compaction or cross-ta
 To show cloud tasks alongside local harnesses:
 
 ```sh
-export TINYCODE_CLOUDFLARE_AGENT_URL=https://tinycode-cloudflare-agent.example.workers.dev
+export TINYCODE_CLOUDFLARE_AGENT_URL=https://tiny-durable-agent.example.workers.dev
 export TINYCODE_CLOUDFLARE_AGENT_TOKEN=replace-with-the-same-access-token
 pnpm run dev
 ```

@@ -79,7 +79,7 @@ Before deploying, set `CLOUDFLARE_ACCOUNT_ID` in the Worker configuration and cr
 Open the printed HTTPS Worker URL and sign in with the access token. Optionally, connect the local Node app to show cloud tasks alongside local harnesses:
 
 ```sh
-export TINYCODE_CLOUDFLARE_AGENT_URL=https://tinycode-cloudflare-agent.example.workers.dev
+export TINYCODE_CLOUDFLARE_AGENT_URL=https://tiny-durable-agent.example.workers.dev
 export TINYCODE_CLOUDFLARE_AGENT_TOKEN=replace-with-the-same-access-token
 pnpm run dev
 ```
