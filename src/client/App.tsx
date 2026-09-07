@@ -103,7 +103,11 @@ const welcomePhrases = [
 const fail = (error: unknown) =>
   setShell({ error: error instanceof Error ? error.message : String(error) });
 
-function savedSelection(): { provider: ProviderId; model: string; thinkingLevel: string | null } {
+function savedSelection(): {
+  provider: ProviderId;
+  model: string;
+  thinkingLevel: string | null;
+} {
   try {
     const value = JSON.parse(
       localStorage.getItem(serverStorageKey("tinycode-selection")) ?? "null",
@@ -538,7 +542,11 @@ function ApprovalCard({ approval }: { approval: Approval }) {
   async function respond(allow: boolean) {
     setBusy(true);
     try {
-      await post(`/tasks/${approval.taskId}/answer`, { id: approval.id, allow, text: answer });
+      await post(`/tasks/${approval.taskId}/answer`, {
+        id: approval.id,
+        allow,
+        text: answer,
+      });
     } catch (e) {
       fail(e);
       setBusy(false);
@@ -747,10 +755,10 @@ function Conversation({ task, connected }: { task: Task; connected: boolean }) {
             {task.provider === "cloudflare"
               ? "Durable agent · VM on demand"
               : task.projectId === null
-              ? "Task workspace"
-              : task.worktreePath
-                ? "Worktree"
-                : "Current checkout"}
+                ? "Task workspace"
+                : task.worktreePath
+                  ? "Worktree"
+                  : "Current checkout"}
           </span>
         </div>
       </div>
@@ -842,7 +850,12 @@ function TaskButton({
         if (e.key === "ContextMenu" || (e.shiftKey && e.key === "F10")) {
           e.preventDefault();
           const bounds = e.currentTarget.getBoundingClientRect();
-          onMenu({ task, x: bounds.left + 16, y: bounds.bottom, trigger: e.currentTarget });
+          onMenu({
+            task,
+            x: bounds.left + 16,
+            y: bounds.bottom,
+            trigger: e.currentTarget,
+          });
         }
       }}
       title={`${task.title} · ${providerNames[task.provider]} · ${task.status}`}
@@ -860,7 +873,13 @@ function TaskButton({
 
 export function App() {
   const shell = useShell();
-  const createAttempt = useRef<{ key: string; task: Task; requestId: string } | null>(null);
+  const cloudOnly = shell.providers.length === 1 && shell.providers[0].id === "cloudflare";
+  const createAttempt = useRef<{
+    key: string;
+    task: Task;
+    requestId: string;
+  } | null>(null);
+  const createRequest = useRef<{ key: string; id: string } | null>(null);
   const [welcomeIndex, setWelcomeIndex] = useState(0);
   const task = shell.tasks.find((t) => t.id === shell.activeTaskId);
   const [selectedProject, setSelectedProject] = useState(
@@ -966,7 +985,10 @@ export function App() {
     ]);
     if (createAttempt.current?.key !== key) createAttempt.current = null;
     if (!createAttempt.current) {
+      if (createRequest.current?.key !== key)
+        createRequest.current = { key, id: crypto.randomUUID() };
       const newTask = await post<Task>("/tasks", {
+        requestId: createRequest.current.id,
         projectId: provider === "cloudflare" ? null : (project?.id ?? null),
         provider,
         model: model.trim() || undefined,
@@ -974,12 +996,21 @@ export function App() {
         permissionMode,
         branch: useWorktree ? branch.trim() : undefined,
       });
-      createAttempt.current = { key, task: newTask, requestId: crypto.randomUUID() };
+      createAttempt.current = {
+        key,
+        task: newTask,
+        requestId: crypto.randomUUID(),
+      };
     }
     const attempt = createAttempt.current;
-    await post(`/tasks/${attempt.task.id}/send`, { text, images, requestId: attempt.requestId });
+    await post(`/tasks/${attempt.task.id}/send`, {
+      text,
+      images,
+      requestId: attempt.requestId,
+    });
     selectTask(attempt.task.id);
     createAttempt.current = null;
+    createRequest.current = null;
   }
   function chooseProject(projectId: string) {
     setSelectedProject(projectId);
@@ -988,6 +1019,7 @@ export function App() {
   }
   function newTask(projectId = "") {
     createAttempt.current = null;
+    createRequest.current = null;
     setPermissionMode(defaultPermissionMode[provider]);
     setWelcomeIndex((index) => (index + 1) % welcomePhrases.length);
     selectTask(null);
@@ -1046,17 +1078,19 @@ export function App() {
                 ))}
               </div>
             )}
-            <div className="section-label">
-              <span>PROJECTS</span>
-              <button
-                aria-label="Open a project"
-                title="Open a project"
-                className="icon-button"
-                onClick={() => setProjectDialog(true)}
-              >
-                <Plus size={14} />
-              </button>
-            </div>
+            {!cloudOnly && (
+              <div className="section-label">
+                <span>PROJECTS</span>
+                <button
+                  aria-label="Open a project"
+                  title="Open a project"
+                  className="icon-button"
+                  onClick={() => setProjectDialog(true)}
+                >
+                  <Plus size={14} />
+                </button>
+              </div>
+            )}
             {shell.projects.map((p) => (
               <div className="project-group" key={p.id}>
                 <div className="project-heading">
@@ -1182,9 +1216,9 @@ export function App() {
                   </div>
                   <div className="welcome-dock">
                     <div
-                      className={`workspace-controls ${provider === "cloudflare" ? "cloud-runtime" : ""}`}
+                      className={`workspace-controls ${provider === "cloudflare" || cloudOnly ? "cloud-runtime" : ""}`}
                     >
-                      {provider === "cloudflare" ? (
+                      {provider === "cloudflare" || cloudOnly ? (
                         <>
                           <span className="cloud-runtime-mark">
                             <Cloud size={14} />

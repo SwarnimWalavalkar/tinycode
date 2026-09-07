@@ -123,6 +123,8 @@ export function latest() {
   if (shell.activeTaskId) sendSocket({ type: "subscribe", taskId: shell.activeTaskId });
 }
 export function selectTask(id: string | null) {
+  cloudCursor = undefined;
+  cloudSyncing = true;
   history.replaceState(null, "", id ? `#${id}` : location.pathname);
   setShell({ activeTaskId: id });
   rows.clear();
@@ -154,6 +156,8 @@ export async function api<T = unknown>(path: string, init?: RequestInit): Promis
 export const post = <T = unknown>(path: string, data: unknown = {}) =>
   api<T>(path, { method: "POST", body: JSON.stringify(data) });
 let socket: WebSocket | undefined;
+let cloudCursor: number | undefined;
+let cloudSyncing = false;
 let reconnect: ReturnType<typeof setTimeout> | undefined;
 let attempts = 0;
 let started = false;
@@ -177,6 +181,18 @@ export function markTaskRead(taskId: string, attentionId: string) {
   });
 }
 function receive(p: ServerPacket) {
+  if (p.type === "cloud.event") {
+    if (p.taskId !== shell.activeTaskId || cloudSyncing || cloudCursor === undefined) return;
+    if (p.cursor <= cloudCursor) return;
+    if (p.cursor !== cloudCursor + 1) {
+      cloudSyncing = true;
+      sendSocket({ type: "subscribe", taskId: p.taskId });
+      return;
+    }
+    cloudCursor = p.cursor;
+    receive(p.packet);
+    return;
+  }
   if (p.type === "providers") setShell({ providers: p.providers });
   if (p.type === "bootstrap")
     setShell({
@@ -188,6 +204,8 @@ function receive(p: ServerPacket) {
     });
   if (p.type === "tasks") setShell({ tasks: p.tasks });
   if (p.type === "timeline" && p.taskId === shell.activeTaskId) {
+    cloudCursor = p.cursor;
+    cloudSyncing = false;
     timeline = {
       ...timeline,
       ready: true,
@@ -249,6 +267,10 @@ function receive(p: ServerPacket) {
         emitTimeline();
       }
     }
+  }
+  if (p.type === "item.delta" && p.taskId === timeline.taskId) {
+    const row = rows.get(p.id);
+    if (row) receive({ type: "item.patch", taskId: p.taskId, id: p.id, patch: { text: row.text + p.text } });
   }
   if (p.type === "error") setShell({ error: p.message });
   if (p.type.startsWith("terminal.")) for (const fn of terminalListeners) fn(p);

@@ -1,8 +1,6 @@
 import type {
   CloudflareHealth,
   CloudflareModelCatalog,
-  CloudflareTitleRequest,
-  CloudflareTitleResponse,
 } from "../../shared/cloudflare-agent.js";
 
 const TOKEN_ENV = "TINYCODE_CLOUDFLARE_AGENT_TOKEN";
@@ -41,7 +39,7 @@ export async function cloudflareFetch(
   const headers = new Headers(init.headers);
   headers.set("authorization", `Bearer ${token()}`);
   headers.set("accept", "application/json, application/x-ndjson");
-  if (init.body !== undefined) headers.set("content-type", "application/json");
+  if (init.body !== undefined && !headers.has("content-type")) headers.set("content-type", "application/json");
   return fetch(endpoint.href, { ...init, headers });
 }
 
@@ -71,19 +69,5 @@ export async function cloudflareHealth(base: string): Promise<CloudflareHealth> 
 export async function cloudflareModels(base: string): Promise<CloudflareModelCatalog> {
   return json(
     await cloudflareFetch(base, "/v1/models", { signal: AbortSignal.timeout(15_000) }),
-  );
-}
-
-export async function cloudflareTitle(
-  base: string,
-  request: CloudflareTitleRequest,
-  signal: AbortSignal,
-): Promise<CloudflareTitleResponse> {
-  return json(
-    await cloudflareFetch(base, "/v1/title", {
-      method: "POST",
-      body: JSON.stringify(request),
-      signal,
-    }),
   );
 }

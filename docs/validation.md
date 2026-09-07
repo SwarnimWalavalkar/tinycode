@@ -1,5 +1,35 @@
 # v0 validation
 
+## Cloud-authoritative deployment · September 7, 2026
+
+This supersedes the request-bound Cloudflare architecture described in the September 4 entry below.
+The Worker now serves the React assets and API directly. Task DO SQLite owns transcripts, Pi history,
+accepted requests, queues, turns, and replay events. A directory DO provides a retryable task index and
+hibernating WebSocket subscriptions; R2 stores attachments. Node is an optional proxy for cloud tasks.
+
+- `pnpm run check` passed 107 root tests and 23 Cloudflare tests, with both TypeScript projects checked.
+  The obsolete NDJSON-adapter tests were replaced with cloud-proxy coverage. New SQLite-backed DO tests
+  cover detached acceptance/completion, restart recovery without effect replay, steering, ordered queues,
+  bounded queue events, stale image edits, idempotent legacy import/receipts, retryable publication,
+  cursor expiry, authentication and the snapshot/live-event subscription race.
+- `pnpm run build:cloudflare` passed: 351 static assets, Worker bundle, all three DO bindings, R2 binding,
+  and a real build of the pinned Sandbox Docker image. This was a dry-run, not a deployment.
+- `pnpm run test:cloudflare:http` passed against local Wrangler/workerd, then passed again with the same
+  persisted state after restarting Wrangler. It exercises real DO SQL/alarm dispatch, accepted-request
+  deduplication, retained transcript and errors, R2 bytes and task ownership, login/origin checks, and
+  hibernating WebSocket snapshots/reconnect. Its model execution deliberately fails for a missing API key;
+  no model credential or billable provider request is used.
+- The standalone browser UI was checked against that local Worker: token login, cloud task discovery,
+  persisted transcript, R2-backed image preview, and read-state updates worked without a Node server.
+- `pnpm run test:smoke` passed the existing production Node HTTP/WebSocket, filesystem, Git/worktree,
+  real PTY and image-upload smoke paths.
+
+Accepted but unstarted work survives reconstruction. A host restart during execution is reported as
+an interrupted turn and pauses pending work; this does not claim transparent in-flight continuation or
+exactly-once external effects. No actual Cloudflare account deployment, successful remote provider/VM
+round-trip, load benchmark, workspace persistence, private-repository provisioning or multi-user
+authorization was validated or added here. See the package README for reproducible local checks.
+
 ## Cloudflare durable agent · September 4, 2026
 
 The monorepo now includes an optional Cloudflare Worker package. The production route maps each Tinycode task ID to one `DurablePiAgent` Durable Object, persists Pi messages in bounded DO SQLite chunks, authenticates the Node adapter with a Worker transport token over HTTPS, and exposes a same-ID Cloudflare Sandbox through `vm_start`, `vm_exec`, `vm_status`, and `vm_destroy`. The VM boundary has both a Cloudflare adapter and an in-memory test double. OpenAI is the only configured Pi provider in this first cut.

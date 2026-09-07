@@ -47,6 +47,7 @@ export class CloudflareSandboxVm implements VmRuntime {
     this.assertAvailable();
     if (signal?.aborted) throw interrupted(signal);
     const sandbox = this.sandbox();
+    this.writeSnapshot({ ...this.readSnapshot(), commandPending: true });
     const process = await sandbox.startProcess(command, { cwd, autoCleanup: false });
     let rejectCancelled!: (reason: Error) => void;
     const cancelled = new Promise<never>((_resolve, reject) => {
@@ -105,6 +106,8 @@ export class CloudflareSandboxVm implements VmRuntime {
       }
       disarmCancellation();
       const logs = await process.getLogs();
+      const { commandPending, ...snapshot } = this.readSnapshot();
+      this.writeSnapshot(snapshot);
       return {
         success: completed.exitCode === 0,
         stdout: clip(logs.stdout),
@@ -136,6 +139,19 @@ export class CloudflareSandboxVm implements VmRuntime {
 
   async interrupt() {
     await this.stopActive?.(new Error("VM command was interrupted"));
+  }
+
+  async recover() {
+    if (!this.readSnapshot().commandPending) return;
+    const sandbox = this.sandbox();
+    for (const process of await sandbox.listProcesses()) {
+      if (process.status === "running" || process.status === "starting") {
+        await sandbox.killProcess(process.id, "SIGKILL");
+        await process.waitForExit(PROCESS_EXIT_TIMEOUT);
+      }
+    }
+    const { commandPending, ...snapshot } = this.readSnapshot();
+    this.writeSnapshot(snapshot);
   }
 
   async destroy() {

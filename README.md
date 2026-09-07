@@ -63,25 +63,32 @@ Projectless tasks appear under **Scratchpad** in the sidebar. Each has its own p
 
 ## Cloudflare durable agent
 
-The optional [`packages/cloudflare-agent`](packages/cloudflare-agent/README.md) workspace deploys a Worker with one `DurablePiAgent` Durable Object per Tinycode task. The DO owns the Pi SDK agent loop, bounded-chunk conversation history in SQLite, model calls, and four VM tools: `vm_start`, `vm_exec`, `vm_status`, and `vm_destroy`. A same-ID Cloudflare Sandbox container is created only when the agent uses it.
+The [Cloudflare workspace](packages/cloudflare-agent/README.md) deploys the same React UI and its durable-agent backend entirely on Cloudflare; no Node server is required. One `DurablePiAgent` DO per task owns Pi's agent loop, SQLite conversation history, UI transcript, accepted messages, queue, and replay events. A directory DO indexes tasks and fans out WebSocket updates, R2 stores image attachments, and a same-ID Sandbox container starts only when the agent uses its VM tools.
 
-The OpenAI API key stays in the Worker environment and is not copied into the VM. Tinycode's Node server authenticates to the Worker with a separate transport token:
+The model key stays in the trusted Worker/DO environment, never in the VM. This is a single-user deployment protected by a separate random access token of at least 24 characters:
 
 ```sh
+pnpm --dir packages/cloudflare-agent exec wrangler r2 bucket create tinycode-attachments
 pnpm --dir packages/cloudflare-agent exec wrangler secret put TINYCODE_AGENT_TOKEN
 pnpm --dir packages/cloudflare-agent exec wrangler secret put OPENAI_API_KEY
 pnpm run deploy:cloudflare
+```
 
+Open the printed HTTPS Worker URL and sign in with the access token. Optionally, connect the local Node app to show cloud tasks alongside local harnesses:
+
+```sh
 export TINYCODE_CLOUDFLARE_AGENT_URL=https://tinycode-cloudflare-agent.example.workers.dev
-export TINYCODE_CLOUDFLARE_AGENT_TOKEN=replace-with-the-same-transport-token
+export TINYCODE_CLOUDFLARE_AGENT_TOKEN=replace-with-the-same-access-token
 pnpm run dev
 ```
 
-Cloudflare tasks currently use a remote, projectless workspace. VM commands and output appear in the transcript, but the local terminal and file explorer are hidden because they cannot truthfully address that remote filesystem yet. The DO history persists; the initial VM filesystem does not persist after an idle Sandbox sleep or explicit destroy. See the package README for configuration and extension points.
+The cloud remains authoritative through either UI. Closing the browser or Node proxy does not stop accepted work; reconnect restores the transcript. A host restart during a turn marks it interrupted and pauses queued work instead of blindly repeating uncertain external effects. Legacy local Cloudflare histories are imported idempotently on bootstrap, with local originals retained.
+
+Cloud tasks use a remote, projectless workspace. VM commands and output appear in the transcript, but remote terminal, file explorer, and diff controls are not implemented. DO history and R2 attachments persist; VM files remain ephemeral across idle sleep or destruction. See the package README for deployment, migration, and the credential-free local Cloudflare smoke test.
 
 The thinking picker beside the model shows the selected level. Available levels come from the installed harness for that model; **Default** inherits harness settings. Change it between turns. Changing models resets thinking to Default.
 
-Task names are generated in the background from the first message, using a small model through the selected harness's credentials. Right-click a task and choose **Rename…** to edit its name or use a suggestion from the conversation. Suggestions never overwrite your input, and saved names survive refreshes. A temporary message-based label remains if naming is unavailable.
+Local task names are generated in the background from the first message, using a small model through the selected harness's credentials. Cloud tasks use a message-based initial name and support model-generated suggestions on request. Right-click a task and choose **Rename…** to edit its name or use a suggestion from the conversation. Suggestions never overwrite your input, and saved names survive refreshes. A temporary message-based label remains if naming is unavailable.
 
 Paste images, drop them onto the composer, or use **+** to attach them. Previews sit on an animated shelf above the input, with upload status, removal, and retry. Images can be sent on their own or with text, including in queued or steered messages. Transcript thumbnails appear above your message and open the full image when clicked. PNG, JPEG, WebP, and GIF are supported: up to six images, 5 MB each, and 10 MB per message.
 
@@ -225,13 +232,18 @@ Node server: tasks + SQLite + adapter lifecycle + local filesystem/Git
        ├── Codex app-server (JSONL)
        ├── Claude Agent SDK → installed Claude Code
        ├── Pi RPC (JSONL)
-       └── HTTPS/NDJSON → Cloudflare Worker
-            └── one DurablePiAgent DO per task
-                 ├── Pi SDK loop + SQLite history
-                 └── VM tools → same-ID Sandbox container
+       └── optional cloud proxy (no local execution/history ownership)
+
+Browser -> Cloudflare Worker (same UI assets + authenticated API)
+       ├── TaskDirectory DO: task index + WebSocket fanout
+       ├── R2: image attachments
+       └── one DurablePiAgent DO per task
+            ├── Pi SDK + SQLite history/transcript/queue/events
+            ├── alarms: detached execution and recovery
+            └── VM tools → same-ID Sandbox container
 ```
 
-`src/shared/contracts.ts` and `src/shared/cloudflare-agent.ts` are the small wire contracts. `src/server/adapters` translates native harnesses and the Cloudflare event stream into one UI projection. `runtime.ts` owns task delivery and coalesces display updates. Local harnesses own their agent decisions; the optional `packages/cloudflare-agent` runtime delegates them to Pi's agent core. `src/client/state.ts` keeps token updates scoped to individual rows. Terminal output bypasses React entirely.
+`src/shared/contracts.ts` and `src/shared/cloudflare-agent.ts` are the small wire contracts. `src/server/adapters` translates local native harnesses into one UI projection. `runtime.ts` owns local task delivery; cloud task delivery and UI events live in the DO, with `cloud-authority.ts` providing an optional disposable Node proxy. Local harnesses own their agent decisions; the optional `packages/cloudflare-agent` runtime delegates them to Pi's agent core. `src/client/state.ts` keeps token updates scoped to individual rows. Terminal output bypasses React entirely.
 
 ```sh
 npm run check

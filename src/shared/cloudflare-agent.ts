@@ -1,23 +1,6 @@
 import type { ModelCatalog } from "./contracts.js";
 
-export const CLOUDFLARE_AGENT_PROTOCOL = 1;
-
-export interface CloudflareImage {
-  data: string;
-  mimeType: "image/png" | "image/jpeg" | "image/webp" | "image/gif";
-}
-
-export interface CloudflareRunRequest {
-  text: string;
-  model: string;
-  thinkingLevel: string | null;
-  images?: CloudflareImage[];
-}
-
-export interface CloudflareSteerRequest {
-  text: string;
-  images?: CloudflareImage[];
-}
+export const CLOUDFLARE_AGENT_PROTOCOL = 2;
 
 export type CloudflareAgentEvent =
   | { type: "session"; sessionId: string; model: string }
@@ -35,16 +18,6 @@ export interface CloudflareHealth {
   ready: boolean;
   version: string;
   protocol: number;
-}
-
-export interface CloudflareTitleRequest {
-  prompt: string;
-  model: string | null;
-}
-
-export interface CloudflareTitleResponse {
-  title: string;
-  model: string;
 }
 
 export type CloudflareModelCatalog = ModelCatalog;

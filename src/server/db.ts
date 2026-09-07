@@ -128,9 +128,12 @@ export class Store {
     )
       this.db.exec("ALTER TABLE tasks ADD COLUMN thinking_level TEXT");
     if (
-      (this.db.pragma("table_info(tasks)") as { name: string; notnull: number }[]).some(
-        (column) => column.name === "project_id" && column.notnull,
-      )
+      (
+        this.db.pragma("table_info(tasks)") as {
+          name: string;
+          notnull: number;
+        }[]
+      ).some((column) => column.name === "project_id" && column.notnull)
     ) {
       // Rebuild without cascading deletion into existing transcripts.
       this.db.pragma("foreign_keys = OFF");
@@ -215,7 +218,9 @@ export class Store {
       .prepare(
         "SELECT id, task_id taskId, text, mode, status, error, created_at createdAt, images FROM queued_messages WHERE task_id = ? ORDER BY position, seq",
       )
-      .all(taskId) as (Omit<QueuedMessage, "images"> & { images: string | null })[];
+      .all(taskId) as (Omit<QueuedMessage, "images"> & {
+      images: string | null;
+    })[];
     return rows.map(({ images, ...row }) => ({
       ...row,
       ...(images ? { images: JSON.parse(images) } : {}),
@@ -476,6 +481,13 @@ export class Store {
     } catch {
       return false;
     }
+  }
+  requestIds(taskId: string, after = ""): string[] {
+    return (
+      this.db
+        .prepare("SELECT id FROM requests WHERE task_id=? AND id>? ORDER BY id LIMIT 500")
+        .all(taskId, after) as { id: string }[]
+    ).map((row) => row.id);
   }
   startTurn(taskId: string): Turn {
     const turn: Turn = {

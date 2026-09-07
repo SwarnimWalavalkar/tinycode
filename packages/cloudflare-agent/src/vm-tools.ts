@@ -5,6 +5,8 @@ export type VmState = "absent" | "ready" | "destroyed";
 export interface VmSnapshot {
   state: VmState;
   lastUsedAt: string | null;
+  /** Persisted before starting any process; cleared only after confirmed exit. */
+  commandPending?: boolean;
 }
 
 export interface VmRuntime {

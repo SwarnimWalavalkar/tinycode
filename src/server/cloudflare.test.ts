@@ -1,95 +1,108 @@
 import { afterEach, describe, expect, test, vi } from "vitest";
-import { createCloudflare } from "./adapters/cloudflare.js";
 import { pendingProviders, probeProviders } from "./adapters/index.js";
 import { cloudflareAgentUrl, cloudflareModels } from "./adapters/cloudflare-client.js";
-import type { Sink } from "./adapters/types.js";
+import { CloudAuthority } from "./cloud-authority.js";
+import { Store } from "./db.js";
+import { Images } from "./images.js";
 import type { Task } from "../shared/contracts.js";
-
 const base = "https://agent.example.workers.dev";
-
-function task(): Task {
-  return {
-    id: "task_cloudflare_1",
-    projectId: null,
-    title: "Cloud task",
-    provider: "cloudflare",
-    model: "openai/gpt-5.4",
-    thinkingLevel: "medium",
-    permissionMode: "native",
-    status: "idle",
-    attentionId: null,
-    cwd: "/unused",
-    worktreePath: null,
-    nativeSessionId: null,
-    createdAt: "2026-09-04T00:00:00.000Z",
-    updatedAt: "2026-09-04T00:00:00.000Z",
-  };
-}
-
-function sink(): Sink {
-  return {
-    add: vi.fn((kind) => `${kind}-row`),
-    delta: vi.fn(),
-    patch: vi.fn(),
-    identity: vi.fn(),
-    model: vi.fn(),
-    status: vi.fn(),
-    ask: vi.fn(),
-  };
-}
-
 afterEach(() => {
   vi.unstubAllEnvs();
   vi.unstubAllGlobals();
 });
-
-describe("Cloudflare agent adapter", () => {
-  test("authenticates the task-scoped NDJSON run and projects its events", async () => {
+describe("Cloudflare authority bridge", () => {
+  test("imports every legacy timeline page and receipt without mutating local originals", async () => {
+    vi.stubEnv("TINYCODE_CLOUDFLARE_AGENT_URL", base);
     vi.stubEnv("TINYCODE_CLOUDFLARE_AGENT_TOKEN", "transport-secret");
-    const stream = [
-      { type: "session", sessionId: "do-id", model: "openai/gpt-5.4" },
-      { type: "content.start", id: "answer", kind: "assistant" },
-      { type: "content.delta", id: "answer", text: "hel" },
-      { type: "content.end", id: "answer", text: "hello" },
-      { type: "tool.start", id: "tool:1", name: "vm_exec", input: { command: "pwd" } },
-      { type: "tool.end", id: "tool:1", output: "/workspace", isError: false },
-      { type: "done" },
-    ]
-      .map((event) => JSON.stringify(event))
-      .join("\n");
-    const fetch = vi.fn(async () => new Response(`${stream}\n`, { status: 200 }));
-    vi.stubGlobal("fetch", fetch);
-    const output = sink();
-    const session = await createCloudflare({
-      task: task(),
-      sink: output,
-      command: base,
-      dataDir: "/unused",
-    });
-
-    await session.run("Say hello", []);
-
-    const [url, init] = fetch.mock.calls[0] as unknown as [string, RequestInit];
-    expect(url).toBe(`${base}/v1/agents/task_cloudflare_1/run`);
-    expect(new Headers(init.headers).get("authorization")).toBe("Bearer transport-secret");
-    expect(JSON.parse(String(init.body))).toMatchObject({
-      text: "Say hello",
+    const store = new Store(":memory:");
+    const task: Task = {
+      id: "legacy-task",
+      projectId: null,
+      provider: "cloudflare",
+      title: "Legacy",
+      status: "complete",
       model: "openai/gpt-5.4",
       thinkingLevel: "medium",
+      permissionMode: "native",
+      attentionId: null,
+      cwd: "/unused",
+      worktreePath: null,
+      nativeSessionId: "retained-do",
+      createdAt: "then",
+      updatedAt: "then",
+    };
+    store.insertTask(task);
+    for (let i = 0; i < 125; i++)
+      store.append({ id: `item-${i}`, taskId: task.id, kind: "user", text: `message ${i}` });
+    for (let i = 0; i < 501; i++) store.claimRequest(`request-${i}`, task.id);
+    store.enqueue({
+      id: "pending",
+      taskId: task.id,
+      text: "later",
+      mode: "queue",
+      status: "pending",
+      error: null,
+      createdAt: "then",
     });
-    expect(output.identity).toHaveBeenCalledWith("do-id");
-    expect(output.model).toHaveBeenCalledWith("openai/gpt-5.4");
-    expect(output.delta).toHaveBeenCalledWith("assistant-row", "hel");
-    expect(output.patch).toHaveBeenCalledWith("assistant-row", {
-      text: "hello",
-      status: "complete",
+    const inputs: any[] = [];
+    const fetch = vi.fn(async (url: string, init?: RequestInit) => {
+      const input = JSON.parse(String(init?.body));
+      inputs.push(input);
+      return Response.json(url.endsWith("/api/tasks") ? task : { ok: true });
     });
-    expect(output.patch).toHaveBeenCalledWith("tool-row", {
-      text: "/workspace",
-      status: "complete",
-    });
+    vi.stubGlobal("fetch", fetch);
+    const cloud = new CloudAuthority(vi.fn());
+    try {
+      await cloud.migrate(store, new Images(store, "/unused"));
+      const calls = fetch.mock.calls.length;
+      await cloud.migrate(store, new Images(store, "/unused"));
+      expect(fetch.mock.calls).toHaveLength(calls);
+      expect(inputs[0]).toMatchObject({ requestId: task.id, legacy: true });
+      expect(inputs.flatMap((input) => input.items ?? [])).toHaveLength(125);
+      expect(inputs.flatMap((input) => input.receipts ?? [])).toHaveLength(501);
+      expect(inputs.at(-1)).toMatchObject({
+        finish: true,
+        task: { title: "Legacy" },
+        queue: [{ id: "pending" }],
+      });
+      expect(store.queue(task.id)).toHaveLength(1);
+      expect(store.requestIds(task.id)).toHaveLength(500);
+      expect(store.timeline(task.id).hasOlder).toBe(true);
+    } finally {
+      cloud.dispose();
+      store.db.close();
+    }
   });
-
+  test("creates and sends through the cloud API without owning a local run", async () => {
+    vi.stubEnv("TINYCODE_CLOUDFLARE_AGENT_URL", base);
+    vi.stubEnv("TINYCODE_CLOUDFLARE_AGENT_TOKEN", "transport-secret");
+    const task = {
+      id: "cloud-task",
+      provider: "cloudflare",
+      updatedAt: "2026-09-07",
+    };
+    const fetch = vi.fn(async (url: string, _init?: RequestInit) =>
+      Response.json(url.endsWith("/send") ? { ok: true, runId: "request" } : task),
+    );
+    vi.stubGlobal("fetch", fetch);
+    const cloud = new CloudAuthority(vi.fn());
+    expect(await cloud.create({ requestId: task.id, provider: "cloudflare" })).toEqual(task);
+    expect(cloud.owns(task.id)).toBe(true);
+    expect(cloud.merge([])).toEqual([task]);
+    const accepted = await cloud.fetch("/api/tasks/cloud-task/send", {
+      method: "POST",
+      body: JSON.stringify({ requestId: "request", text: "hello" }),
+    });
+    expect(await accepted.json()).toEqual({ ok: true, runId: "request" });
+    cloud.dispose();
+    expect(fetch.mock.calls.map(([url]) => url)).toEqual([
+      base + "/api/tasks",
+      base + "/api/tasks/cloud-task/send",
+    ]);
+    expect(new Headers(fetch.mock.calls[0][1]?.headers).get("authorization")).toBe(
+      "Bearer transport-secret",
+    );
+  });
   test("reports readiness and models from the deployed Worker", async () => {
     vi.stubEnv("TINYCODE_CLOUDFLARE_AGENT_URL", `${base}/`);
     vi.stubEnv("TINYCODE_CLOUDFLARE_AGENT_TOKEN", "transport-secret");
@@ -99,7 +112,12 @@ describe("Cloudflare agent adapter", () => {
     const fetch = vi.fn(async (input: string | URL | Request) => {
       const url = String(input);
       if (url.endsWith("/v1/health"))
-        return Response.json({ ok: true, ready: true, version: "0.1.0", protocol: 1 });
+        return Response.json({
+          ok: true,
+          ready: true,
+          version: "0.1.0",
+          protocol: 2,
+        });
       if (url.endsWith("/v1/models"))
         return Response.json({
           models: [
@@ -130,100 +148,6 @@ describe("Cloudflare agent adapter", () => {
     });
   });
 
-  test("surfaces a Worker JSON error without leaking transport details", async () => {
-    vi.stubEnv("TINYCODE_CLOUDFLARE_AGENT_TOKEN", "transport-secret");
-    vi.stubGlobal(
-      "fetch",
-      vi.fn(async () => Response.json({ error: "This agent is already running" }, { status: 409 })),
-    );
-    const session = await createCloudflare({
-      task: task(),
-      sink: sink(),
-      command: base,
-      dataDir: "/unused",
-    });
-    const error = await session.run("again", []).catch((caught) => caught as Error);
-    if (!(error instanceof Error)) throw new Error("Expected the Cloudflare run to fail");
-    expect(error.message).toContain("This agent is already running");
-    expect(error.message).not.toContain("transport-secret");
-    expect(error.message).not.toContain(base);
-  });
-
-  test("rejects Pi provider failures and waits for the remote interrupt", async () => {
-    vi.stubEnv("TINYCODE_CLOUDFLARE_AGENT_TOKEN", "transport-secret");
-    let stopped = false;
-    let releaseStop!: () => void;
-    const stopGate = new Promise<void>((resolve) => {
-      releaseStop = resolve;
-    });
-    const fetch = vi.fn(async (input: string | URL | Request) => {
-      const url = String(input);
-      if (url.endsWith("/run"))
-        return new Response(
-          `${JSON.stringify({ type: "session", sessionId: "do-id", model: "openai/gpt-5.4" })}\n${JSON.stringify({ type: "content.start", id: "answer", kind: "assistant" })}\n${JSON.stringify({ type: "error", message: "provider failed" })}\n`,
-          { status: 200 },
-        );
-      if (url.endsWith("/interrupt")) {
-        await stopGate;
-        stopped = true;
-        return Response.json({ ok: true });
-      }
-      return new Response("not found", { status: 404 });
-    });
-    vi.stubGlobal("fetch", fetch);
-    const output = sink();
-    const session = await createCloudflare({
-      task: task(),
-      sink: output,
-      command: base,
-      dataDir: "/unused",
-    });
-
-    let settled = false;
-    const run = session.run("fail", []).finally(() => {
-      settled = true;
-    });
-    await vi.waitFor(() => expect(fetch).toHaveBeenCalledTimes(2));
-    expect(settled).toBe(false);
-    releaseStop();
-    await expect(run).rejects.toThrow("provider failed");
-    expect(stopped).toBe(true);
-    expect(fetch).toHaveBeenCalledTimes(2);
-    expect(output.patch).toHaveBeenCalledWith("assistant-row", { status: "failed" });
-  });
-
-  test("cancels a partially consumed event stream after a protocol error", async () => {
-    vi.stubEnv("TINYCODE_CLOUDFLARE_AGENT_TOKEN", "transport-secret");
-    let cancelled = false;
-    const body = new ReadableStream<Uint8Array>({
-      start(controller) {
-        controller.enqueue(
-          new TextEncoder().encode(`${JSON.stringify({ type: "error", message: "bad event" })}\n`),
-        );
-      },
-      cancel() {
-        cancelled = true;
-      },
-    });
-    vi.stubGlobal(
-      "fetch",
-      vi.fn(async (input: string | URL | Request) =>
-        String(input).endsWith("/interrupt")
-          ? Response.json({ ok: true })
-          : new Response(body, { status: 200 }),
-      ),
-    );
-    const session = await createCloudflare({
-      task: task(),
-      sink: sink(),
-      command: base,
-      dataDir: "/unused",
-    });
-
-    await expect(session.run("fail", [])).rejects.toThrow("bad event");
-    expect(cancelled).toBe(true);
-  });
-
   test("never sends the transport token to a plaintext endpoint", async () => {
     vi.stubEnv("TINYCODE_CLOUDFLARE_AGENT_URL", "http://agent.example.test");
     vi.stubEnv("TINYCODE_CLOUDFLARE_AGENT_TOKEN", "transport-secret");
@@ -243,7 +167,11 @@ describe("Cloudflare agent adapter", () => {
 
     expect(pendingProviders().find((provider) => provider.id === "cloudflare")?.command).toBe("");
     await expect(probeProviders("/unused")).resolves.toContainEqual(
-      expect.objectContaining({ id: "cloudflare", command: "", readiness: "error" }),
+      expect.objectContaining({
+        id: "cloudflare",
+        command: "",
+        readiness: "error",
+      }),
     );
   });
 });
