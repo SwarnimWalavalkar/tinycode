@@ -22,6 +22,7 @@ import {
   json,
 } from "./http.js";
 import { modelCatalog } from "./models.js";
+import { gatewayCredential } from "./gateway.js";
 import type { CloudEvent } from "./task-store.js";
 
 type Peer = { taskId?: string; generation: string; syncing: boolean };
@@ -31,7 +32,10 @@ type ImageRecord = ImageAttachment & {
 };
 
 export function providers(env: Env): ProviderInfo[] {
-  const available = !!env.OPENAI_API_KEY && modelCatalog(env).models.length > 0;
+  let available = false;
+  try {
+    available = !!gatewayCredential(env) && modelCatalog(env).models.length > 0;
+  } catch {}
   return [
     {
       id: "cloudflare",

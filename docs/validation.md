@@ -1,5 +1,26 @@
 # v0 validation
 
+## AI Gateway · September 7, 2026
+
+Cloudflare-mode inference and naming now use AI Gateway's account REST API with a Cloudflare token,
+not a direct OpenAI key. Existing model IDs are preserved; Workers AI and additional external models
+use explicit deployment-owned capability definitions. The shipped Workers AI preset is GPT OSS 120B.
+
+- `pnpm run check` passed 107 root tests and 31 Cloudflare tests. Eight new gateway tests run the real
+  Pi harness and SDK against controlled SSE/HTTP responses: qualified model IDs, account-scoped URLs,
+  Cloudflare authentication and gateway headers, Responses reasoning/text, Chat Completions streaming
+  tool arguments and result replay, images, capability validation, cancellation, and 401 propagation
+  without direct-provider fallback. No model service is contacted by these tests.
+- The credential-free local Wrangler/workerd HTTP smoke passed using a fake account ID and no
+  inference token. Its missing-token error, task transcript/receipts, R2 ownership, and reconnect
+  remain durable. The smoke accepts the directory's eventual task-index update after a snapshot.
+- The UI/Worker/Sandbox dry-run build passed with the gateway configuration and no new dependencies.
+
+No live Cloudflare AI Gateway or Workers AI inference call was made. Account permissions, funding,
+enabled upstream models, and provider-specific behavior still need a credentialed deployment test.
+The example Workers AI preset leaves reasoning control at the model default rather than claiming
+unverified effort levels. Cost placeholders in Pi are not billing measurements; consult Cloudflare.
+
 ## Cloud-authoritative deployment · September 7, 2026
 
 This supersedes the request-bound Cloudflare architecture described in the September 4 entry below.

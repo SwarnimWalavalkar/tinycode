@@ -1,11 +1,12 @@
 import type { AgentMessage, AgentTool, ThinkingLevel } from "@earendil-works/pi-agent-core";
 import { Agent } from "@earendil-works/pi-agent-core";
-import { createModels, type Api, type Model } from "@earendil-works/pi-ai";
-import { openaiProvider } from "@earendil-works/pi-ai/providers/openai";
+import type { Model } from "@earendil-works/pi-ai";
+import { streamSimple as responses } from "@earendil-works/pi-ai/api/openai-responses";
+import { streamSimple as completions } from "@earendil-works/pi-ai/api/openai-completions";
 import type { ModelCatalog } from "../../../src/shared/contracts.js";
 import type { Env } from "./env.js";
 
-const THINKING_LEVELS = ["off", "minimal", "low", "medium", "high", "xhigh"] as const;
+import { customDefinitions, gatewayCredential, gatewayModel, modelDefinition } from "./gateway.js";
 
 export function configuredModelIds(env: Env): string[] {
   const ids = (env.TINYCODE_MODELS ?? env.TINYCODE_DEFAULT_MODEL ?? "openai/gpt-5.4")
@@ -21,38 +22,27 @@ export function defaultModelId(env: Env): string {
   return env.TINYCODE_DEFAULT_MODEL?.trim() || configuredModelIds(env)[0] || "openai/gpt-5.4";
 }
 
-function collection() {
-  const models = createModels();
-  models.setProvider(openaiProvider());
-  return models;
-}
-
-export function resolveModel(
-  env: Env,
-  id: string,
-): { models: ReturnType<typeof collection>; model: Model<Api> } {
+export function resolveModel(env: Env, id: string) {
   if (!configuredModelIds(env).includes(id)) throw new Error("Model is not enabled for this agent");
-  const slash = id.indexOf("/");
-  const provider = slash < 1 ? "" : id.slice(0, slash);
-  const modelId = slash < 1 ? "" : id.slice(slash + 1);
-  if (provider !== "openai" || !modelId) throw new Error("Only OpenAI models are supported initially");
-  const models = collection();
-  const model = models.getModel(provider, modelId);
-  if (!model) throw new Error(`Pi does not recognize model ${id}`);
-  return { models, model };
+  return { model: gatewayModel(env, id) };
 }
 
 export function modelCatalog(env: Env): ModelCatalog {
+  customDefinitions(env); // malformed deployment metadata must not silently fall back
   const available = configuredModelIds(env).flatMap((id) => {
     try {
-      const { model } = resolveModel(env, id);
-      return [{
-        id,
-        label: model.name,
-        description: "Pi SDK · OpenAI · Durable Object",
-        thinkingLevels: model.reasoning ? [...THINKING_LEVELS] : [],
-        defaultThinkingLevel: model.reasoning ? "medium" : null,
-      }];
+      const model = modelDefinition(env, id);
+      return [
+        {
+          id,
+          label: model.name,
+          description: `Pi SDK · AI Gateway · ${id.startsWith("@cf/") ? "Workers AI" : "external model"}`,
+          thinkingLevels: model.thinkingLevels,
+          defaultThinkingLevel: model.thinkingLevels.includes("medium")
+            ? "medium"
+            : (model.thinkingLevels[0] ?? null),
+        },
+      ];
     } catch {
       return [];
     }
@@ -71,11 +61,15 @@ export function normalizeThinkingLevel(
   modelId: string,
   value?: string | null,
 ): ThinkingLevel {
-  const { model } = resolveModel(env, modelId);
-  if (!model.reasoning) return "off";
-  return THINKING_LEVELS.includes(value as (typeof THINKING_LEVELS)[number])
-    ? (value as ThinkingLevel)
-    : "medium";
+  const levels = modelDefinition(env, modelId).thinkingLevels;
+  if (!levels.length) {
+    if (value != null && value !== "off")
+      throw new Error("This gateway model has no configurable thinking levels");
+    return "off";
+  }
+  if (value != null && !levels.some((level) => level === value))
+    throw new Error("Thinking level is not supported by this gateway model");
+  return (value as ThinkingLevel) ?? (levels.includes("medium") ? "medium" : levels[0]);
 }
 
 export function createPiAgent(
@@ -89,13 +83,32 @@ export function createPiAgent(
     tools?: AgentTool<any>[];
   },
 ) {
-  if (!env.OPENAI_API_KEY) throw new Error("OPENAI_API_KEY is not configured");
-  const { models, model } = resolveModel(env, input.modelId);
+  const credential = gatewayCredential(env);
+  const { model } = resolveModel(env, input.modelId);
   const thinking = normalizeThinkingLevel(env, input.modelId, input.thinkingLevel);
   return new Agent({
     sessionId: input.sessionId,
-    getApiKey: async () => env.OPENAI_API_KEY,
-    streamFn: models.streamSimple.bind(models),
+    getApiKey: async () => credential,
+    streamFn: (_model, context, options) => {
+      if (
+        !model.input.includes("image") &&
+        context.messages.some(
+          (message) =>
+            Array.isArray(message.content) && message.content.some((part) => part.type === "image"),
+        )
+      )
+        throw new Error(
+          "This gateway model does not support image inputs; choose an image-capable model",
+        );
+      const settings = {
+        ...options,
+        apiKey: credential,
+        headers: { ...options?.headers, ...model.headers },
+      };
+      return model.api === "openai-responses"
+        ? responses(model as Model<"openai-responses">, context, settings)
+        : completions(model as Model<"openai-completions">, context, settings);
+    },
     toolExecution: "parallel",
     initialState: {
       systemPrompt: input.systemPrompt,

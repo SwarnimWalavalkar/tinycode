@@ -135,7 +135,8 @@ function fixture() {
       : Response.json({ ok: true }),
   );
   const env = {
-    OPENAI_API_KEY: "test",
+    CLOUDFLARE_API_TOKEN: "test",
+    CLOUDFLARE_ACCOUNT_ID: "0".repeat(32),
     TINYCODE_AGENT_TOKEN: "a".repeat(32),
     DIRECTORY: {
       idFromName: (id: string) => id,

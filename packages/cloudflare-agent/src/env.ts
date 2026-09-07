@@ -7,7 +7,10 @@ export interface Env {
   ATTACHMENTS: R2Bucket;
   ASSETS: Fetcher;
   TINYCODE_ALLOWED_ORIGINS?: string;
-  OPENAI_API_KEY?: string;
+  CLOUDFLARE_API_TOKEN?: string;
+  CLOUDFLARE_ACCOUNT_ID?: string;
+  CLOUDFLARE_GATEWAY_ID?: string;
+  TINYCODE_GATEWAY_MODELS?: string;
   TINYCODE_AGENT_TOKEN?: string;
   TINYCODE_DEFAULT_MODEL?: string;
   TINYCODE_MODELS?: string;

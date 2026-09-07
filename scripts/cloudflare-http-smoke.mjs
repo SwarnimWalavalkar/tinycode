@@ -46,7 +46,7 @@ assert.equal(health.authority, "cloud");
 assert.equal(
   health.ready,
   false,
-  "Unset OPENAI_API_KEY before running this credential-free smoke test",
+  "Unset CLOUDFLARE_API_TOKEN before running this credential-free smoke test",
 );
 const login = await api("/api/login", { token });
 assert.equal(login.status, 200);
@@ -93,7 +93,7 @@ const snapshot = await ok(await api(path + "/snapshot"));
 assert.equal(snapshot.items.filter((item) => item.kind === "user").length, 1);
 assert(
   snapshot.items.some(
-    (item) => item.kind === "error" && item.text.includes("OPENAI_API_KEY"),
+    (item) => item.kind === "error" && item.text.includes("CLOUDFLARE_API_TOKEN"),
   ),
 );
 assert.equal(snapshot.queue.length, 0);
@@ -146,13 +146,14 @@ assert.equal(
   snapshot.items.length,
 );
 first.socket.close();
-await ok(await api(path + "/title", { title: "Changed while disconnected" }));
+const changedTitle = `Changed while disconnected ${Date.now()}`;
+await ok(await api(path + "/title", { title: changedTitle }));
 const reconnected = await connect();
 await eventually(async () =>
   reconnected.packets.some(
     (packet) =>
-      packet.type === "bootstrap" &&
-      packet.tasks.some((task) => task.title === "Changed while disconnected"),
+      (packet.type === "bootstrap" || packet.type === "tasks") &&
+      packet.tasks.some((task) => task.title === changedTitle),
   ),
 );
 assert.equal(

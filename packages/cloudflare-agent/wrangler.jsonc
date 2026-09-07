@@ -38,7 +38,9 @@
     }
   ],
   "vars": {
+    "CLOUDFLARE_GATEWAY_ID": "default",
     "TINYCODE_DEFAULT_MODEL": "openai/gpt-5.4",
-    "TINYCODE_MODELS": "openai/gpt-5.4,openai/gpt-5.4-mini"
+    "TINYCODE_MODELS": "openai/gpt-5.4,openai/gpt-5.4-mini,@cf/openai/gpt-oss-120b",
+    "TINYCODE_GATEWAY_MODELS": "[{\"id\":\"@cf/openai/gpt-oss-120b\",\"name\":\"GPT OSS 120B (Workers AI)\",\"api\":\"openai-responses\",\"input\":[\"text\"],\"contextWindow\":128000,\"maxTokens\":4096,\"thinkingLevels\":[]}]"
   }
 }

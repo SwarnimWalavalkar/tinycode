@@ -65,14 +65,16 @@ Projectless tasks appear under **Scratchpad** in the sidebar. Each has its own p
 
 The [Cloudflare workspace](packages/cloudflare-agent/README.md) deploys the same React UI and its durable-agent backend entirely on Cloudflare; no Node server is required. One `DurablePiAgent` DO per task owns Pi's agent loop, SQLite conversation history, UI transcript, accepted messages, queue, and replay events. A directory DO indexes tasks and fans out WebSocket updates, R2 stores image attachments, and a same-ID Sandbox container starts only when the agent uses its VM tools.
 
-The model key stays in the trusted Worker/DO environment, never in the VM. This is a single-user deployment protected by a separate random access token of at least 24 characters:
+Model calls go through Cloudflare AI Gateway, using a Cloudflare inference token kept in the trusted Worker/DO environment, never in the VM. This is a single-user deployment protected by a separate random access token of at least 24 characters:
 
 ```sh
 pnpm --dir packages/cloudflare-agent exec wrangler r2 bucket create tinycode-attachments
 pnpm --dir packages/cloudflare-agent exec wrangler secret put TINYCODE_AGENT_TOKEN
-pnpm --dir packages/cloudflare-agent exec wrangler secret put OPENAI_API_KEY
+pnpm --dir packages/cloudflare-agent exec wrangler secret put CLOUDFLARE_API_TOKEN
 pnpm run deploy:cloudflare
 ```
+
+Before deploying, set `CLOUDFLARE_ACCOUNT_ID` in the Worker configuration and create/select your AI Gateway. The inference token requires Workers AI Read permission; external models use Cloudflare Unified Billing. The picker supports external models and Workers AI, with GPT OSS 120B included for Cloudflare-hosted inference. See the [gateway setup and migration instructions](packages/cloudflare-agent/README.md#ai-gateway-configuration).
 
 Open the printed HTTPS Worker URL and sign in with the access token. Optionally, connect the local Node app to show cloud tasks alongside local harnesses:
 
@@ -211,7 +213,7 @@ Configuration is read from the server process environment. Tinycode does not aut
 
 ## Deliberate v0 limits
 
-- Local harness settings, authentication, tools, compaction, permissions, and agent execution stay native. Tinycode does not promise feature parity with every native interactive command. Unsupported Codex reverse requests are explicitly declined and surfaced. The Cloudflare package instead embeds Pi's provider-neutral agent core and currently enables OpenAI models only.
+- Local harness settings, authentication, tools, compaction, permissions, and agent execution stay native. Tinycode does not promise feature parity with every native interactive command. Unsupported Codex reverse requests are explicitly declined and surfaced. The Cloudflare package embeds Pi's agent core and accesses configured models through AI Gateway; per-model capabilities require validation.
 - Subagents are a display integration. Tinycode does not create a separate agent orchestrator. Pi subagents depend on installed extensions and the events they expose.
 - Non-image attachments, session import, checkpoints, custom plugins, and automated Git workflows are deferred.
 - Model catalogs load on demand and are cached for one minute. Tinycode does not silently replace a chosen model when catalog loading fails. Tasks created before model tracking show "Choose model" until selected or reported by the harness on their next turn.

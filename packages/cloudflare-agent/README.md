@@ -11,7 +11,7 @@ Browser -> Worker assets + authenticated API
               +-- one DurablePiAgent DO per task
               |     +-- SQLite: transcript, Pi history, queue, receipts, replay events
               |     +-- alarms: dispatch accepted work, reconcile interrupted runs
-              |     +-- Pi agent-core -> model provider
+              |     +-- Pi agent-core -> AI Gateway -> Workers AI / external model
               |     +-- VM tools -> same-ID Cloudflare Sandbox container
               |
               +-- R2: image attachments
@@ -31,13 +31,15 @@ authentication, and a working Docker engine to build the Sandbox image.
 ```sh
 pnpm --dir packages/cloudflare-agent exec wrangler r2 bucket create tinycode-attachments
 pnpm --dir packages/cloudflare-agent exec wrangler secret put TINYCODE_AGENT_TOKEN
-pnpm --dir packages/cloudflare-agent exec wrangler secret put OPENAI_API_KEY
+pnpm --dir packages/cloudflare-agent exec wrangler secret put CLOUDFLARE_API_TOKEN
 pnpm run deploy:cloudflare
 ```
 
 Choose a random access token of at least 24 characters. If a bucket with this name already exists,
 use that bucket or edit the binding in `wrangler.jsonc` before creating one. Edit `TINYCODE_MODELS`
-and `TINYCODE_DEFAULT_MODEL` there if required. The deploy command builds the React assets, Worker,
+and `TINYCODE_DEFAULT_MODEL` there if required. Set `CLOUDFLARE_ACCOUNT_ID` in its `vars` to your real
+32-character Cloudflare account ID. `CLOUDFLARE_GATEWAY_ID` defaults to `default`; create that gateway
+in your account or set the slug of an existing one. The deploy command builds the React assets, Worker,
 and Sandbox image and applies the DO migrations. Open the printed HTTPS Worker URL and sign in
 with the access token. Do not put the model API key into the browser.
 
@@ -47,8 +49,48 @@ sets a Secure, HttpOnly, SameSite=Strict cookie derived from the token. Bearer a
 authenticated WebSocket subprotocols are also supported. Same-origin access is the default;
 `TINYCODE_ALLOWED_ORIGINS` optionally allows additional comma-separated browser origins.
 
-The model key stays in the trusted Worker/DO environment and is never passed to the Sandbox.
-The access token authorizes the Tinycode API; it is not a GitHub or model-provider credential.
+The inference token stays in the trusted Worker/DO environment and is never passed to the Sandbox.
+The access token authorizes the Tinycode API; it is not a GitHub or inference credential.
+
+## AI Gateway configuration
+
+All inference, including title suggestions, uses Cloudflare's current account API at
+`https://api.cloudflare.com/client/v4/accounts/<account-id>/ai/v1`. There is no direct-provider
+fallback and `OPENAI_API_KEY` is no longer used. Set the Worker secret `CLOUDFLARE_API_TOKEN` to a
+token scoped to your account with **Account > Workers AI > Read** permission. An AI Gateway-only
+management token is not sufficient for this API. This inference secret is separate from both the
+browser access token and the credentials Wrangler uses to deploy.
+
+Enable Unified Billing and fund your Cloudflare account for supported external models. Selecting an
+external model still sends inference to that provider; selecting a Workers AI model keeps inference
+on Cloudflare. See the [AI Gateway REST API](https://developers.cloudflare.com/ai-gateway/usage/rest-api/).
+
+The shipped picker includes `openai/gpt-5.4`, `openai/gpt-5.4-mini`, and
+`@cf/openai/gpt-oss-120b`. Existing OpenAI task IDs are preserved but routed through the gateway.
+To use only Cloudflare-hosted inference (including naming), set both `TINYCODE_DEFAULT_MODEL` and
+`TINYCODE_MODELS` to `@cf/openai/gpt-oss-120b`.
+
+`TINYCODE_MODELS` is the comma-separated allowlist. `TINYCODE_GATEWAY_MODELS` is a JSON string of
+explicit capability definitions for models outside Pi's built-in OpenAI catalog, or overrides of
+that metadata. Each entry has `id`, `name`, `api` (`openai-responses` or `openai-completions`),
+`input` (`["text"]` or `["text","image"]`), `contextWindow`, `maxTokens`, and `thinkingLevels`.
+Use canonical `author/model` IDs for external models and `@cf/author/model` IDs for Workers AI.
+Only allow models with function/tool calling support. Verify their gateway API and capabilities
+before enabling them; not every gateway model is an agent-compatible language model.
+
+The included [GPT OSS preset](https://developers.cloudflare.com/workers-ai/models/gpt-oss-120b/)
+uses Responses, text inputs, a 128,000-token context and a conservative 4,096-token output budget.
+Its empty `thinkingLevels` leaves model reasoning at its default without advertising unverified
+reasoning controls. Other presets can explicitly allow `off`, `minimal`, `low`, `medium`, `high`,
+or `xhigh` where supported. Unsupported images are rejected rather than silently dropped.
+
+Response caching is disabled for agent calls using `cf-aig-skip-cache`; review your gateway's logging
+and retention settings for sensitive conversations. Pi's local cost estimates are zero placeholders,
+not a claim of free inference: Cloudflare's billing/analytics are authoritative for costs.
+
+Upgrade existing deployments by setting the account ID and inference secret before publishing the
+new Worker. An old OpenAI key alone will not make the harness ready. No model discovery network call
+is made by the health check: readiness means valid configuration, not verified credits or model access.
 
 ## Durable execution contract
 
@@ -103,7 +145,7 @@ are not implemented.
 
 The Sandbox receives no GitHub, registry or other integration credentials. Public clones work
 with public network access; private clones need a separately implemented scoped credential broker
-or provisioning mechanism. The provider-neutral Pi harness currently enables OpenAI models.
+or provisioning mechanism. Pi uses Responses or Chat Completions through AI Gateway for enabled models.
 Additional VM implementations belong behind `VmRuntime`; only Cloudflare Sandbox is implemented.
 
 The fully Cloudflare-hosted deployment runs this durable Pi harness. Local Codex/Claude/Pi CLI
@@ -117,11 +159,11 @@ pnpm run build:cloudflare
 ```
 
 The build is a Wrangler dry-run, including the real Docker image build; it does not deploy.
-For the actual local Worker/DO/R2/WebSocket smoke test, leave `OPENAI_API_KEY` unset and use no
+For the actual local Worker/DO/R2/WebSocket smoke test, leave `CLOUDFLARE_API_TOKEN` unset and use no
 real secrets in `.dev.vars`. In one terminal, after building:
 
 ```sh
-pnpm --dir packages/cloudflare-agent exec wrangler dev --local --port 8794 --inspector-port 9294 --var TINYCODE_AGENT_TOKEN:tinycode-local-smoke-token-not-a-secret --persist-to /tmp/tinycode-cloud-authority-smoke
+pnpm --dir packages/cloudflare-agent exec wrangler dev --local --port 8794 --inspector-port 9294 --var TINYCODE_AGENT_TOKEN:tinycode-local-smoke-token-not-a-secret --var CLOUDFLARE_ACCOUNT_ID:00000000000000000000000000000000 --persist-to /tmp/tinycode-gateway-smoke
 ```
 
 In another terminal:
