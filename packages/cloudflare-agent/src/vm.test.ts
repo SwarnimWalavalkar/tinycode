@@ -4,9 +4,7 @@ import { CloudflareSandboxVm } from "./vm.js";
 import type { Env } from "./env.js";
 
 const sandbox = vi.hoisted(() => ({
-  startProcess: vi.fn(),
-  killProcess: vi.fn(),
-  cleanupCompletedProcesses: vi.fn(),
+  exec: vi.fn(),
   destroy: vi.fn(),
 }));
 
@@ -15,11 +13,19 @@ vi.mock("@cloudflare/sandbox", () => ({ getSandbox: () => sandbox }));
 function runtime(): VmRuntime {
   return {
     start: vi.fn(async (): Promise<VmSnapshot> => ({ state: "ready", lastUsedAt: "now" })),
-    exec: vi.fn(async () => ({ success: true, stdout: "ok", stderr: "", exitCode: 0 })),
+    exec: vi.fn(async () => ({
+      success: true,
+      stdout: "ok",
+      stderr: "",
+      exitCode: 0,
+    })),
     status: vi.fn((): VmSnapshot => ({ state: "absent", lastUsedAt: null })),
     interrupt: vi.fn(async () => {}),
     destroy: vi.fn(
-      async (): Promise<VmSnapshot> => ({ state: "destroyed", lastUsedAt: "now" }),
+      async (): Promise<VmSnapshot> => ({
+        state: "destroyed",
+        lastUsedAt: "now",
+      }),
     ),
   };
 }
@@ -28,8 +34,9 @@ describe("VM tools", () => {
   it("keeps commands inside the agent workspace and uses the default timeout", async () => {
     const vm = runtime();
     const tool = createVmTools(vm).find((tool) => tool.name === "vm_exec")!;
-    await expect(tool.execute("call", { command: "pwd", cwd: "/etc" }, undefined as never))
-      .rejects.toThrow("inside /workspace");
+    await expect(
+      tool.execute("call", { command: "pwd", cwd: "/etc" }, undefined as never),
+    ).rejects.toThrow("inside /workspace");
     await expect(
       tool.execute("call", { command: "pwd", cwd: "/workspace/../etc" }, undefined as never),
     ).rejects.toThrow("inside /workspace");
@@ -55,22 +62,8 @@ describe("VM tools", () => {
 
 describe("Cloudflare Sandbox VM", () => {
   beforeEach(() => {
-    vi.clearAllMocks();
-    sandbox.killProcess.mockResolvedValue(undefined);
-    sandbox.cleanupCompletedProcesses.mockResolvedValue(0);
+    vi.resetAllMocks();
   });
-
-  function process(
-    exit: Promise<{ exitCode: number }> = Promise.resolve({ exitCode: 0 }),
-    logs = { stdout: "", stderr: "" },
-  ) {
-    return {
-      id: "process-1",
-      waitForExit: vi.fn(() => exit),
-      getLogs: vi.fn(async () => logs),
-    };
-  }
-
   function fixture(initial: VmSnapshot) {
     let snapshot = initial;
     const vm = new CloudflareSandboxVm(
@@ -83,90 +76,78 @@ describe("Cloudflare Sandbox VM", () => {
     );
     return { vm, snapshot: () => snapshot };
   }
+  const result = (exitCode = 0, stdout = "", stderr = "") => ({
+    success: true,
+    stderr: "",
+    stdout: JSON.stringify({
+      success: exitCode === 0,
+      exitCode,
+      stdout,
+      stderr,
+    }),
+  });
 
   it("does not report ready when workspace preparation fails", async () => {
-    sandbox.startProcess.mockResolvedValue(
-      process(Promise.resolve({ exitCode: 1 }), { stdout: "", stderr: "permission denied" }),
-    );
+    sandbox.exec.mockResolvedValue(result(1, "", "permission denied"));
     const { vm, snapshot } = fixture({ state: "absent", lastUsedAt: null });
-
     await expect(vm.start()).rejects.toThrow("permission denied");
     expect(snapshot()).toEqual({ state: "absent", lastUsedAt: null });
   });
 
-  it("waits for the full process group to exit before acknowledging cancellation", async () => {
-    let exit!: (value: { exitCode: number }) => void;
-    const killed = new Promise<{ exitCode: number }>((resolve) => {
-      exit = resolve;
-    });
-    const running = process(new Promise(() => {}));
-    running.waitForExit
-      .mockImplementationOnce(() => new Promise(() => {}))
-      .mockImplementationOnce(() => killed);
-    sandbox.startProcess.mockResolvedValue(running);
+  it("waits for supervisor confirmation before acknowledging cancellation", async () => {
+    let confirm!: () => void;
+    sandbox.exec.mockImplementation((command: string) =>
+      command.includes(" stop ")
+        ? new Promise((resolve) => {
+            confirm = () => resolve({ success: true });
+          })
+        : new Promise(() => {}),
+    );
     const { vm } = fixture({ state: "absent", lastUsedAt: null });
     const controller = new AbortController();
-    const command = vm.exec("long-command", "/workspace", 30_000, controller.signal);
-    const commandFailure = expect(command).rejects.toThrow();
-    await vi.waitFor(() => expect(sandbox.startProcess).toHaveBeenCalled());
-
+    const failed = expect(
+      vm.exec("long-command", "/workspace", 30_000, controller.signal),
+    ).rejects.toThrow("interrupted");
     controller.abort();
     let acknowledged = false;
     const interrupt = vm.interrupt().then(() => {
       acknowledged = true;
     });
-    await vi.waitFor(() =>
-      expect(sandbox.killProcess).toHaveBeenCalledWith("process-1", "SIGKILL"),
-    );
+    await vi.waitFor(() => expect(confirm).toBeDefined());
     expect(acknowledged).toBe(false);
-
-    exit({ exitCode: 137 });
+    confirm();
     await interrupt;
-    await commandFailure;
+    await failed;
     expect(acknowledged).toBe(true);
   });
 
-  it("kills the process group when a command exceeds its timeout", async () => {
-    const running = process(new Promise(() => {}));
-    running.waitForExit
-      .mockImplementationOnce(() => new Promise(() => {}))
-      .mockImplementationOnce(async () => ({ exitCode: 137 }));
-    sandbox.startProcess.mockResolvedValue(running);
-    const { vm } = fixture({ state: "absent", lastUsedAt: null });
-
+  it("cancels even while lazy startup has not returned", async () => {
+    sandbox.exec.mockImplementation((command: string) =>
+      command.includes(" stop ") ? Promise.resolve({ success: true }) : new Promise(() => {}),
+    );
+    const { vm, snapshot } = fixture({ state: "absent", lastUsedAt: null });
     await expect(vm.exec("long-command", "/workspace", 10)).rejects.toThrow(
       "timed out after 10 ms",
     );
-    expect(sandbox.killProcess).toHaveBeenCalledWith("process-1", "SIGKILL");
+    expect(sandbox.exec.mock.calls[1][0]).toContain(" stop ");
+    expect(snapshot().commandPending).toBeUndefined();
   });
 
-  it("does not kill a completed process while its logs are being collected", async () => {
-    let releaseLogs!: () => void;
-    const logs = new Promise<{ stdout: string; stderr: string }>((resolve) => {
-      releaseLogs = () => resolve({ stdout: "done", stderr: "" });
-    });
-    const completed = process();
-    completed.getLogs.mockImplementation(() => logs);
-    sandbox.startProcess.mockResolvedValue(completed);
+  it("does not cancel a completed command", async () => {
+    sandbox.exec.mockResolvedValue(result(0, "done"));
     const { vm } = fixture({ state: "absent", lastUsedAt: null });
     const controller = new AbortController();
-    const command = vm.exec("quick-command", "/workspace", 30_000, controller.signal);
-    await vi.waitFor(() => expect(completed.getLogs).toHaveBeenCalled());
-
+    await expect(
+      vm.exec("quick-command", "/workspace", 30_000, controller.signal),
+    ).resolves.toMatchObject({ success: true, stdout: "done" });
     controller.abort();
-    releaseLogs();
-
-    await expect(command).resolves.toMatchObject({ success: true, stdout: "done" });
-    expect(sandbox.killProcess).not.toHaveBeenCalled();
+    expect(sandbox.exec).toHaveBeenCalledTimes(1);
   });
 
   it("does not recreate a permanently destroyed VM", async () => {
     const { vm } = fixture({ state: "destroyed", lastUsedAt: "now" });
-
     await expect(vm.start()).rejects.toThrow("permanently destroyed");
-    await expect(vm.exec("pwd", "/workspace", 1_000)).rejects.toThrow(
-      "permanently destroyed",
-    );
-    expect(sandbox.startProcess).not.toHaveBeenCalled();
+    await expect(vm.exec("pwd", "/workspace", 1_000)).rejects.toThrow("permanently destroyed");
+    expect(sandbox.exec).not.toHaveBeenCalled();
   });
 });

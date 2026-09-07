@@ -6,7 +6,7 @@ import { streamSimple as completions } from "@earendil-works/pi-ai/api/openai-co
 import type { ModelCatalog } from "../../../src/shared/contracts.js";
 import type { Env } from "./env.js";
 
-import { customDefinitions, gatewayCredential, gatewayModel, modelDefinition } from "./gateway.js";
+import { gatewayCredential, gatewayModel, modelDefinition } from "./gateway.js";
 
 export function configuredModelIds(env: Env): string[] {
   const ids = (env.TINYCODE_MODELS ?? env.TINYCODE_DEFAULT_MODEL ?? "openai/gpt-5.4")
@@ -28,24 +28,17 @@ export function resolveModel(env: Env, id: string) {
 }
 
 export function modelCatalog(env: Env): ModelCatalog {
-  customDefinitions(env); // malformed deployment metadata must not silently fall back
-  const available = configuredModelIds(env).flatMap((id) => {
-    try {
-      const model = modelDefinition(env, id);
-      return [
-        {
-          id,
-          label: model.name,
-          description: `Pi SDK · AI Gateway · ${id.startsWith("@cf/") ? "Workers AI" : "external model"}`,
-          thinkingLevels: model.thinkingLevels,
-          defaultThinkingLevel: model.thinkingLevels.includes("medium")
-            ? "medium"
-            : (model.thinkingLevels[0] ?? null),
-        },
-      ];
-    } catch {
-      return [];
-    }
+  const available = configuredModelIds(env).map((id) => {
+    const model = modelDefinition(env, id);
+    return {
+      id,
+      label: model.name,
+      description: `Pi SDK · AI Gateway · ${id.startsWith("@cf/") ? "Workers AI" : "external model"}`,
+      thinkingLevels: model.thinkingLevels,
+      defaultThinkingLevel: model.thinkingLevels.includes("medium")
+        ? "medium"
+        : (model.thinkingLevels[0] ?? null),
+    };
   });
   const preferred = defaultModelId(env);
   return {

@@ -122,6 +122,11 @@ const json = (res: ServerResponse, data: unknown, status = 200) => {
 };
 
 const server = createServer(async (req, res) => {
+  if (shuttingDown) {
+    res.writeHead(503, { connection: "close" });
+    res.end("Server is shutting down");
+    return;
+  }
   res.setHeader("X-Content-Type-Options", "nosniff");
   res.setHeader("Referrer-Policy", "no-referrer");
   res.setHeader("X-Frame-Options", "DENY");
@@ -210,13 +215,6 @@ const server = createServer(async (req, res) => {
       }
     }
     if (url.pathname === "/api/bootstrap") {
-      await cloud
-        .migrate(store, images)
-        .catch(() =>
-          console.warn(
-            "Cloud history import is unavailable; legacy cloud tasks remain read-only until import succeeds.",
-          ),
-        );
       await cloud.refresh().catch(() => {});
       json(res, bootstrap());
       return;
@@ -325,7 +323,7 @@ const server = createServer(async (req, res) => {
       const task = findTask(match[1]);
       if (task.provider === "cloudflare" && !["timeline"].includes(match[2]))
         throw new Error(
-          "This legacy cloud task must be imported into cloud storage before continuing",
+          "This pre-release local cloud task is read-only; create a new cloud task to continue",
         );
       const action = match[2];
       if (action === "title" && req.method === "POST") {
@@ -487,6 +485,10 @@ const wss = new WebSocketServer({
   handleProtocols: (protocols) => (protocols.has("tinycode") ? "tinycode" : false),
 });
 server.on("upgrade", (req, socket, head) => {
+  if (shuttingDown) {
+    socket.destroy();
+    return;
+  }
   if (
     req.url !== "/socket" ||
     !sameOrigin(req, origin, allowedOrigins) ||
@@ -593,15 +595,14 @@ async function shutdown() {
   shuttingDown = true;
   const forcedExit = setTimeout(() => process.exit(0), 20_000);
   forcedExit.unref();
-  await Promise.allSettled([titles.dispose(), runtime.dispose()]);
+  const listenerClosed = new Promise<void>((resolve) => server.close(() => resolve()));
   cloud.dispose();
   terminals.dispose();
   for (const ws of peers.keys()) ws.close();
   wss.close();
-  server.close(() => {
-    clearTimeout(forcedExit);
-    process.exit(0);
-  });
+  await Promise.allSettled([titles.dispose(), runtime.dispose(), listenerClosed]);
+  clearTimeout(forcedExit);
+  process.exit(0);
 }
 process.on("SIGINT", () => void shutdown());
 process.on("SIGTERM", () => void shutdown());

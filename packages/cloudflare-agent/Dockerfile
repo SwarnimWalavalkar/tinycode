@@ -5,3 +5,5 @@ RUN apt-get update \
     && apt-get clean
 
 WORKDIR /workspace
+
+COPY supervisor.py /usr/local/lib/tinycode-supervisor.py

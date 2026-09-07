@@ -7,6 +7,8 @@ export interface VmSnapshot {
   lastUsedAt: string | null;
   /** Persisted before starting any process; cleared only after confirmed exit. */
   commandPending?: boolean;
+  commandId?: string;
+  commandDeadline?: number;
 }
 
 export interface VmRuntime {

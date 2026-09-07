@@ -10,7 +10,6 @@ export interface Env {
   CLOUDFLARE_API_TOKEN?: string;
   CLOUDFLARE_ACCOUNT_ID?: string;
   CLOUDFLARE_GATEWAY_ID?: string;
-  TINYCODE_GATEWAY_MODELS?: string;
   TINYCODE_AGENT_TOKEN?: string;
   TINYCODE_DEFAULT_MODEL?: string;
   TINYCODE_MODELS?: string;

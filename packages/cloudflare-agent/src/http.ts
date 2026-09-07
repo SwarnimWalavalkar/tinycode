@@ -78,9 +78,12 @@ export async function body(
   return value as Record<string, any>;
 }
 
+export const publicError = (error: unknown) =>
+  error instanceof HttpError ? error.message : "Request failed; check Worker logs";
+
 export const failure = (error: unknown) =>
   json(
-    { error: error instanceof Error ? error.message : "Request failed" },
+    { error: publicError(error) },
     error instanceof HttpError ? error.status : 500,
   );
 

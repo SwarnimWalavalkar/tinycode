@@ -20,6 +20,7 @@ import {
   identifier,
   internal,
   json,
+  publicError,
 } from "./http.js";
 import { modelCatalog } from "./models.js";
 import { gatewayCredential } from "./gateway.js";
@@ -35,7 +36,9 @@ export function providers(env: Env): ProviderInfo[] {
   let available = false;
   try {
     available = !!gatewayCredential(env) && modelCatalog(env).models.length > 0;
-  } catch {}
+  } catch (error) {
+    console.error("Cloudflare provider configuration is invalid:", error);
+  }
   return [
     {
       id: "cloudflare",
@@ -330,6 +333,7 @@ export class TaskDirectory extends DurableObject<Env> {
     }
   }
   async webSocketMessage(socket: WebSocket, data: string | ArrayBuffer) {
+    let generation: string | undefined;
     try {
       if (typeof data !== "string" || data.length > 4096)
         throw new HttpError(400, "Invalid socket message");
@@ -346,6 +350,7 @@ export class TaskDirectory extends DurableObject<Env> {
           syncing: true,
         };
         socket.serializeAttachment(peer);
+        generation = peer.generation;
         this.pending.set(socket, []);
         const snapshot = await checked<
           Extract<ServerPacket, { type: "timeline" }>
@@ -371,11 +376,21 @@ export class TaskDirectory extends DurableObject<Env> {
         );
       }
     } catch (error) {
-      this.pending.delete(socket);
+      if (
+        generation &&
+        (socket.deserializeAttachment() as Peer).generation !== generation
+      )
+        return;
+      if (generation) {
+        this.pending.delete(socket);
+        socket.serializeAttachment({
+          ...socket.deserializeAttachment(),
+          syncing: false,
+        });
+      }
       this.send(socket, {
         type: "error",
-        message:
-          error instanceof Error ? error.message : "Socket request failed",
+        message: publicError(error),
       });
     }
   }

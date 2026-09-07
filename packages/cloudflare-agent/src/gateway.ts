@@ -23,7 +23,11 @@ export function gatewayEndpoint(env: Env): string {
 export function gatewayHeaders(env: Env): Record<string, string> {
   const gateway = env.CLOUDFLARE_GATEWAY_ID ?? "default";
   if (!/^[a-zA-Z0-9_-]{1,64}$/.test(gateway)) throw new Error("Invalid CLOUDFLARE_GATEWAY_ID");
-  return { "cf-aig-gateway-id": gateway, "cf-aig-skip-cache": "true" };
+  return {
+    "cf-aig-gateway-id": gateway,
+    "cf-aig-skip-cache": "true",
+    "cf-aig-collect-log-payload": "false",
+  };
 }
 
 export function gatewayCredential(env: Env): string {
@@ -34,57 +38,21 @@ export function gatewayCredential(env: Env): string {
   return token;
 }
 
-/** Deployment-owned metadata, not a claim that every gateway model supports every feature. */
-export function customDefinitions(env: Env): GatewayDefinition[] {
-  let value: unknown;
-  try {
-    value = JSON.parse(env.TINYCODE_GATEWAY_MODELS ?? "[]");
-  } catch {
-    throw new Error("TINYCODE_GATEWAY_MODELS must be a JSON array");
-  }
-  if (!Array.isArray(value) || value.length > 100)
-    throw new Error("Configure up to 100 gateway model definitions");
-  const ids = new Set<string>();
-  return value.map((row: unknown) => {
-    if (!row || typeof row !== "object") throw new Error("Invalid gateway model definition");
-    const v = row as Record<string, unknown>;
-    if (
-      typeof v.id !== "string" ||
-      !/^(?:@cf\/)?[a-zA-Z0-9_-]+\/[a-zA-Z0-9._:-]+$/.test(v.id) ||
-      ids.has(v.id)
-    )
-      throw new Error("Gateway models need unique author/model or @cf/author/model IDs");
-    if (typeof v.name !== "string" || !v.name.trim() || v.name.length > 120)
-      throw new Error("Gateway models need a display name");
-    if (v.api !== "openai-responses" && v.api !== "openai-completions")
-      throw new Error("Choose openai-responses or openai-completions for a gateway model");
-    if (
-      !Array.isArray(v.input) ||
-      !v.input.includes("text") ||
-      v.input.some((i) => i !== "text" && i !== "image")
-    )
-      throw new Error("Declare text and optionally image inputs");
-    if (
-      !Number.isSafeInteger(v.contextWindow) ||
-      Number(v.contextWindow) < 1 ||
-      !Number.isSafeInteger(v.maxTokens) ||
-      Number(v.maxTokens) < 1 ||
-      Number(v.maxTokens) > Number(v.contextWindow)
-    )
-      throw new Error("Declare valid contextWindow and maxTokens limits");
-    if (
-      !Array.isArray(v.thinkingLevels) ||
-      new Set(v.thinkingLevels).size !== v.thinkingLevels.length ||
-      v.thinkingLevels.some((level) => !THINKING_LEVELS.includes(level))
-    )
-      throw new Error("Declare supported thinkingLevels, or [] for no reasoning control");
-    ids.add(v.id);
-    return v as GatewayDefinition;
-  });
-}
+/** Reviewed capabilities live in code; deployment variables only select model IDs. */
+const MODEL_CATALOG: GatewayDefinition[] = [
+  {
+    id: "@cf/openai/gpt-oss-120b",
+    name: "GPT OSS 120B (Workers AI)",
+    api: "openai-completions",
+    input: ["text"],
+    contextWindow: 128000,
+    maxTokens: 4096,
+    thinkingLevels: [],
+  },
+];
 
-export function modelDefinition(env: Env, id: string): GatewayDefinition {
-  const configured = customDefinitions(env).find((model) => model.id === id);
+export function modelDefinition(_env: Env, id: string): GatewayDefinition {
+  const configured = MODEL_CATALOG.find((model) => model.id === id);
   if (configured) return configured;
   // Preserve existing task IDs. Pi supplies metadata only; no OpenAI credentials or transport are used.
   const native = id.startsWith("openai/")
@@ -92,11 +60,14 @@ export function modelDefinition(env: Env, id: string): GatewayDefinition {
         .getModels()
         .find((m) => m.id === id.slice(7))
     : undefined;
-  if (!native) throw new Error(`Declare capabilities for ${id} in TINYCODE_GATEWAY_MODELS`);
+  if (!native)
+    throw new Error(`Unknown gateway model: ${id}; add reviewed capabilities to MODEL_CATALOG`);
+  if (native.api !== "openai-responses" && native.api !== "openai-completions")
+    throw new Error("Unsupported native model protocol");
   return {
     id,
     name: native.name,
-    api: "openai-responses",
+    api: native.api,
     input: native.input,
     contextWindow: native.contextWindow,
     maxTokens: native.maxTokens,

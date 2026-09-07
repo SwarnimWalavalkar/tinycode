@@ -1,5 +1,5 @@
 import { CLOUDFLARE_AGENT_PROTOCOL } from "../../../src/shared/cloudflare-agent.js";
-import { allowedOrigin, authorized, matches, sessionToken } from "./auth.js";
+import { allowedOrigin, authorized, matches, sessionToken, SESSION_MAX_AGE_MS } from "./auth.js";
 import { body, failure, HttpError, json, text } from "./http.js";
 import { modelCatalog } from "./models.js";
 import { providers } from "./directory.js";
@@ -35,12 +35,12 @@ export default {
         response = json({ ok: true });
         response.headers.set(
           "set-cookie",
-          `__Host-tinycode=${await sessionToken(env.TINYCODE_AGENT_TOKEN)}; HttpOnly; Secure; SameSite=Strict; Path=/`,
+          `__Host-tinycode=${await sessionToken(env.TINYCODE_AGENT_TOKEN)}; HttpOnly; Secure; SameSite=Strict; Path=/; Max-Age=${SESSION_MAX_AGE_MS / 1000}`,
         );
       } else {
         if (!(await authorized(request, env.TINYCODE_AGENT_TOKEN)))
           throw new HttpError(401, "Enter this server's access token");
-        if (url.pathname === "/v1/health")
+        if (url.pathname === "/api/health")
           response = json({
             ok: true,
             ready: providers(env)[0].available,
@@ -50,7 +50,7 @@ export default {
           });
         else if (url.pathname === "/api/providers")
           response = json(providers(env));
-        else if (["/v1/models", "/api/models"].includes(url.pathname))
+        else if (url.pathname === "/api/models")
           response = json(modelCatalog(env));
         else if (url.pathname === "/api/thinking") {
           const model = modelCatalog(env).models.find(
@@ -80,14 +80,6 @@ export default {
             response = await env.DIRECTORY.get(
               env.DIRECTORY.idFromName("default"),
             ).fetch(new Request(url, request));
-          } else if (
-            url.pathname.startsWith("/v1/agents/") ||
-            url.pathname === "/v1/title"
-          ) {
-            throw new HttpError(
-              410,
-              "The request-bound agent protocol was replaced. Use /api/tasks and durable send/events endpoints.",
-            );
           } else throw new HttpError(404, "Not found");
         }
       }

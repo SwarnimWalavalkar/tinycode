@@ -241,23 +241,25 @@ export class DurablePiAgent extends DurableObject<Env> {
       const unsubscribe = agent.subscribe(async (event: any) => {
         // Pi awaits listeners. Commit history before proceeding to the next model/tool step.
         if (event.type === "message_end") {
-          this.persist();
-          const id = event.message?.tinycodeRequestId;
-          if (typeof id === "string" && !this.store.get(`delivered:${id}`)) {
-            const request = this.store.request(id);
-            if (request)
-              this.store.transaction(() => {
-                this.store.set(`delivered:${id}`, true);
-                this.store.emitQueue();
-                this.store.item({
-                  id: `user:${id}`,
-                  turnId: turn.id,
-                  kind: "user",
-                  text: request.text,
-                  images: request.images,
+          this.store.transaction(() => {
+            this.persist();
+            const id = event.message?.tinycodeRequestId;
+            if (typeof id === "string" && !this.store.get(`delivered:${id}`)) {
+              const request = this.store.request(id);
+              if (request)
+                this.store.transaction(() => {
+                  this.store.set(`delivered:${id}`, true);
+                  this.store.emitQueue();
+                  this.store.item({
+                    id: `user:${id}`,
+                    turnId: turn.id,
+                    kind: "user",
+                    text: request.text,
+                    images: request.images,
+                  });
                 });
-              });
-          }
+            }
+          });
         }
         for (const projected of projector.project(event))
           this.project(projected, turn.id);
@@ -369,8 +371,6 @@ export class DurablePiAgent extends DurableObject<Env> {
     });
   }
   private async accept(input: Record<string, any>) {
-    if (this.store.get("migrationPending"))
-      throw new HttpError(409, "History import is still in progress");
     const id = identifier(input.requestId);
     const content = text(input.text ?? "").trim();
     const mode = input.mode ?? "queue";
@@ -397,11 +397,6 @@ export class DurablePiAgent extends DurableObject<Env> {
       return existing;
     };
     if (duplicate()) return { ok: true, runId: id };
-    if (this.store.get(`legacyReceipt:${id}`))
-      throw new HttpError(
-        409,
-        "This request was already accepted before migration; refresh the task",
-      );
     if (this.store.requests().length >= 100)
       throw new HttpError(429, "Task queue is full");
     const images = await checked<ImageAttachment[]>(
@@ -420,6 +415,7 @@ export class DurablePiAgent extends DurableObject<Env> {
     )
       throw new HttpError(429, "Task queue is full");
     const position = (this.store.get<number>("position") ?? 0) + 1;
+    const hasPendingWork = this.store.requests().length > 0;
     this.store.transaction(() => {
       this.store.set("position", position);
       this.store.putRequest({
@@ -434,7 +430,8 @@ export class DurablePiAgent extends DurableObject<Env> {
         error: null,
         createdAt: new Date().toISOString(),
       });
-      if (!this.running) this.store.set("paused", false);
+      // A fresh message may start a new turn, but must not resume older paused work.
+      if (!this.running && !hasPendingWork) this.store.set("paused", false);
       if (this.store.task().title === "New task")
         this.store.patchTask({ title: content.slice(0, 70) || "Image task" });
       this.store.emitQueue();
@@ -456,6 +453,7 @@ export class DurablePiAgent extends DurableObject<Env> {
     if (
       this.agent !== agent ||
       this.stopping ||
+      agent.state.isStreaming === false ||
       this.store.request(id)?.status !== "pending"
     )
       return;
@@ -463,12 +461,20 @@ export class DurablePiAgent extends DurableObject<Env> {
       this.store.putRequest({ ...request, status: "sending" });
       this.store.emitQueue();
     });
-    agent.steer({
-      role: "user",
-      content: [...images, { type: "text", text: request.text }],
-      timestamp: Date.now(),
-      tinycodeRequestId: id,
-    } as any);
+    try {
+      agent.steer({
+        role: "user",
+        content: [...images, { type: "text", text: request.text }],
+        timestamp: Date.now(),
+        tinycodeRequestId: id,
+      } as any);
+    } catch (error) {
+      this.store.transaction(() => {
+        this.store.putRequest({ ...request, status: "pending", mode: "queue" });
+        this.store.emitQueue();
+      });
+      throw error;
+    }
   }
   async fetch(request: Request): Promise<Response> {
     try {
@@ -487,7 +493,6 @@ export class DurablePiAgent extends DurableObject<Env> {
         const now = new Date().toISOString();
         await this.arm();
         if (this.store.get("task")) return json(this.store.task());
-        this.store.set("migrationPending", input.legacy === true);
         this.store.set("task", {
           id,
           projectId: null,
@@ -541,94 +546,7 @@ export class DurablePiAgent extends DurableObject<Env> {
       }
       if (request.method !== "POST")
         throw new HttpError(405, "Method not allowed");
-      const input = await body(
-        request,
-        action === "import" ? 8 * 1024 * 1024 : 1024 * 1024,
-      );
-      if (action === "import") {
-        if (!this.store.get("migrationPending")) {
-          if (this.store.get("migrationComplete")) return json({ ok: true });
-          throw new HttpError(
-            409,
-            "Only a reserved legacy task accepts history import",
-          );
-        }
-        if (!Array.isArray(input.items) || !Array.isArray(input.turns))
-          throw new HttpError(400, "Invalid history import");
-        for (const item of input.items)
-          if (item.images?.length)
-            await checked(
-              await this.directory().fetch(
-                internal("/claim", {
-                  taskId: this.store.task().id,
-                  ids: item.images.map((i: ImageAttachment) => i.id),
-                }),
-              ),
-            );
-        this.store.importItems(input.items, input.turns);
-        if (input.receipts !== undefined) {
-          if (!Array.isArray(input.receipts) || input.receipts.length > 500)
-            throw new HttpError(400, "Invalid receipts");
-          this.store.transaction(() => {
-            for (const id of input.receipts)
-              this.store.set(`legacyReceipt:${identifier(id)}`, true);
-          });
-        }
-        if (input.finish) {
-          const task = input.task as Task;
-          if (
-            task.id !== this.store.task().id ||
-            task.provider !== "cloudflare"
-          )
-            throw new HttpError(400, "Task identity does not match");
-          await this.arm();
-          for (const row of input.queue ?? [])
-            if (row.images?.length)
-              await checked(
-                await this.directory().fetch(
-                  internal("/claim", {
-                    taskId: this.store.task().id,
-                    ids: row.images.map((i: ImageAttachment) => i.id),
-                  }),
-                ),
-              );
-          if (this.store.get("migrationComplete")) return json({ ok: true });
-          this.store.transaction(() => {
-            this.store.patchTask({
-              title: task.title,
-              createdAt: task.createdAt,
-              status:
-                task.status === "running" || task.status === "waiting"
-                  ? "interrupted"
-                  : task.status,
-            });
-            this.store.set("migrationPending", false);
-            this.store.set("migrationComplete", true);
-            this.store.set("paused", true);
-            for (const queued of input.queue ?? []) {
-              const id = identifier(queued.id);
-              const position = (this.store.get<number>("position") ?? 0) + 1;
-              this.store.set("position", position);
-              this.store.putRequest({
-                ...queued,
-                id,
-                taskId: task.id,
-                position,
-                status: queued.status === "sending" ? "settled" : "pending",
-                fingerprint: JSON.stringify({
-                  text: queued.text,
-                  mode: queued.mode,
-                  images:
-                    queued.images?.map((i: ImageAttachment) => i.id) ?? [],
-                }),
-              });
-            }
-            this.store.emitQueue();
-          });
-          this.changed();
-        }
-        return json({ ok: true });
-      }
+      const input = await body(request);
       if (action === "send") return json(await this.accept(input));
       await this.arm();
       if (action === "interrupt") {
@@ -706,6 +624,8 @@ export class DurablePiAgent extends DurableObject<Env> {
             1024 * 1024
           )
             throw new HttpError(429, "Task queue is full");
+          // The receipt identifies the original submission, not subsequent queue edits.
+          // Keep it stable so a retry of that submission cannot execute it a second time.
           this.store.putRequest({ ...row, text: content, images });
         }
         if (action === "queue/move") {

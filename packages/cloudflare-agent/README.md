@@ -45,9 +45,12 @@ with the access token. Do not put the model API key into the browser.
 
 This is a **single-user deployment**: its token grants access to every task and attachment. It does
 not provide accounts, organizations, per-user authorization, or a public signup flow. Browser login
-sets a Secure, HttpOnly, SameSite=Strict cookie derived from the token. Bearer authentication and
+sets a Secure, HttpOnly, SameSite=Strict cookie derived from the token, with a signed seven-day
+expiry checked by the server. Upgrading from the pre-release cookie format requires signing in again. Bearer authentication and
 authenticated WebSocket subprotocols are also supported. Same-origin access is the default;
 `TINYCODE_ALLOWED_ORIGINS` optionally allows additional comma-separated browser origins.
+
+AI Gateway payload logging is disabled by request header; metadata logging may remain enabled.
 
 The inference token stays in the trusted Worker/DO environment and is never passed to the Sandbox.
 The access token authorizes the Tinycode API; it is not a GitHub or inference credential.
@@ -70,20 +73,18 @@ The shipped picker includes `openai/gpt-5.4`, `openai/gpt-5.4-mini`, and
 To use only Cloudflare-hosted inference (including naming), set both `TINYCODE_DEFAULT_MODEL` and
 `TINYCODE_MODELS` to `@cf/openai/gpt-oss-120b`.
 
-`TINYCODE_MODELS` is the comma-separated allowlist. `TINYCODE_GATEWAY_MODELS` is a JSON string of
-explicit capability definitions for models outside Pi's built-in OpenAI catalog, or overrides of
-that metadata. Each entry has `id`, `name`, `api` (`openai-responses` or `openai-completions`),
-`input` (`["text"]` or `["text","image"]`), `contextWindow`, `maxTokens`, and `thinkingLevels`.
-Use canonical `author/model` IDs for external models and `@cf/author/model` IDs for Workers AI.
-Only allow models with function/tool calling support. Verify their gateway API and capabilities
-before enabling them; not every gateway model is an agent-compatible language model.
+Model capabilities are a typed catalog in `src/gateway.ts`; native OpenAI metadata comes
+from the pinned Pi SDK. `TINYCODE_MODELS` selects the allowed IDs and
+`TINYCODE_DEFAULT_MODEL` selects the default. To add another model, add its verified
+tool-calling protocol, input types, limits and thinking levels to the catalog.
 
 The included [GPT OSS preset](https://developers.cloudflare.com/workers-ai/models/gpt-oss-120b/)
 uses Chat Completions, text inputs, a 128,000-token context and a conservative 4,096-token output budget.
 The Gateway Responses route currently rewrites its tool schema incorrectly. This preset uses
 Chat Completions instead and normalizes null assistant tool-call content to an empty string,
 which the Gateway requires when replaying tool results. Other Responses models are unchanged.
-If you override `TINYCODE_GATEWAY_MODELS` in `.dev.vars`, update this preset's `api` there too.
+`TINYCODE_GATEWAY_MODELS` is no longer read. Remove old overrides from `.dev.vars`,
+`wrangler.jsonc`, or production environments; GPT OSS always uses the checked-in Completions preset.
 Its empty `thinkingLevels` leaves model reasoning at its default without advertising unverified
 reasoning controls. Other presets can explicitly allow `off`, `minimal`, `low`, `medium`, `high`,
 or `xhigh` where supported. Unsupported images are rejected rather than silently dropped.
@@ -118,7 +119,7 @@ is made by the health check: readiness means valid configuration, not verified c
 Cloud tasks initially receive a message-based name. Rename and model-generated title suggestions
 are available through the task menu. No automatic context compaction or cross-task memory is added.
 
-## Optional local UI bridge and legacy migration
+## Optional local UI bridge
 
 To show cloud tasks alongside local harnesses:
 
@@ -129,14 +130,11 @@ pnpm run dev
 ```
 
 The bridge requires HTTPS. New cloud tasks never enter the local execution queue or transcript
-database. Stop old Cloudflare runs before upgrading. On bootstrap, the bridge imports legacy local
-cloud transcripts, attachments, submission receipts, and queued messages into their same-ID DOs.
-Existing Pi model history is preserved. Imports are retryable; queued work is imported **paused**.
-Local originals remain intact as a backup and are no longer used for execution after import.
-If import fails, legacy cloud tasks cannot execute until it succeeds. Keep the Worker name and
-AGENTS binding when upgrading so existing DO identities remain addressable.
-
-The v1 request-bound run/title endpoints return 410. Upgrade the local app and Worker together.
+database. The pre-release local-cloud importer has been removed; old local records remain
+read-only in their original database. Existing cloud-authoritative DO conversations are unchanged.
+Keep the Worker name and AGENTS binding when upgrading so DO identities remain addressable.
+Upgrade the local app and Worker together: health and model discovery now use `/api/health`
+and `/api/models`.
 
 ## VM and product boundaries
 
@@ -153,6 +151,16 @@ The Sandbox receives no GitHub, registry or other integration credentials. Publi
 with public network access; private clones need a separately implemented scoped credential broker
 or provisioning mechanism. Pi uses Responses or Chat Completions through AI Gateway for enabled models.
 Additional VM implementations belong behind `VmRuntime`; only Cloudflare Sandbox is implemented.
+
+Foreground commands use the image's Python supervisor, not SDK process records. It caps each
+output stream at 128 KiB, checks an absolute deadline, and kills/reaps the process group before
+acknowledging cancellation. Commands cannot leave ordinary background children running. A
+delayed startup sees the cancellation marker and cannot execute cancelled work. Control RPCs
+have a six-second deadline; a failed acknowledgement leaves recovery pending, not a false success.
+Small control records expire after five minutes; command output is never written to them.
+This is process lifecycle management, not a security boundary against commands that deliberately
+escape their process group or tamper with the supervisor. Old in-flight SDK commands without a
+supervisor ID fail closed on upgrade; stop old runs before upgrading.
 
 The fully Cloudflare-hosted deployment runs this durable Pi harness. Local Codex/Claude/Pi CLI
 execution remains available through the optional Node server, not through Workers.

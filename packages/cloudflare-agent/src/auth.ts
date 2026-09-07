@@ -63,11 +63,21 @@ export async function authorized(
     .map((s) => s.trim())
     .find((s) => s.startsWith("__Host-tinycode="))
     ?.slice("__Host-tinycode=".length);
-  return cookie ? matches(cookie, await sessionToken(token)) : false;
+  if (!cookie) return false;
+  const issuedAt = Number(cookie.split(".")[0]);
+  const now = Date.now();
+  if (
+    !Number.isSafeInteger(issuedAt) ||
+    issuedAt > now ||
+    now - issuedAt >= SESSION_MAX_AGE_MS
+  )
+    return false;
+  return matches(cookie, await sessionToken(token, issuedAt));
 }
 
+export const SESSION_MAX_AGE_MS = 7 * 24 * 60 * 60 * 1000;
 /** Domain-separated cookie: the deployment secret itself is never set as a cookie. */
-export async function sessionToken(token: string) {
+export async function sessionToken(token: string, issuedAt = Date.now()) {
   const key = await crypto.subtle.importKey(
     "raw",
     new TextEncoder().encode(token),
@@ -79,10 +89,13 @@ export async function sessionToken(token: string) {
     await crypto.subtle.sign(
       "HMAC",
       key,
-      new TextEncoder().encode("tinycode-browser-session-v1"),
+      new TextEncoder().encode(`tinycode-browser-session-v2:${issuedAt}`),
     ),
   );
-  return Array.from(signature)
-    .map((b) => b.toString(16).padStart(2, "0"))
-    .join("");
+  return (
+    `${issuedAt}.` +
+    Array.from(signature)
+      .map((b) => b.toString(16).padStart(2, "0"))
+      .join("")
+  );
 }

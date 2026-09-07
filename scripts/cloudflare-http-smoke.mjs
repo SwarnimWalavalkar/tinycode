@@ -41,7 +41,7 @@ assert.equal(
   ).status,
   403,
 );
-const health = await ok(await api("/v1/health"));
+const health = await ok(await api("/api/health"));
 assert.equal(health.authority, "cloud");
 assert.equal(
   health.ready,

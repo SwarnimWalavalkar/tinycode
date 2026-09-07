@@ -75,9 +75,3 @@ export class AgentEventProjector {
     return [];
   }
 }
-
-export function completionEvent(errorMessage?: string): CloudflareAgentEvent {
-  return errorMessage
-    ? { type: "error", message: errorMessage }
-    : { type: "done" };
-}

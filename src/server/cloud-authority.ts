@@ -7,18 +7,19 @@ import {
   cloudflareResponseError,
 } from "./adapters/cloudflare-client.js";
 import type { Images } from "./images.js";
-import type { Store } from "./db.js";
 
 /** A disposable proxy/cache. Cloud tasks never enter the local Runtime or Store. */
 export class CloudAuthority {
   private tasks: Task[] = [];
   private sockets = new Set<WebSocket>();
   private disposed = false;
-  private migration?: Promise<void>;
-  private migrated = new Set<string>();
   constructor(private changed: () => void) {}
   configured() {
-    return !!cloudflareAgentUrl();
+    try {
+      return !!cloudflareAgentUrl();
+    } catch {
+      return false;
+    }
   }
   owns(id: string) {
     return this.tasks.some((task) => task.id === id);
@@ -54,65 +55,6 @@ export class CloudAuthority {
     this.changed();
     return task;
   }
-  async migrate(store: Store, images: Images) {
-    if (!this.configured()) return;
-    if (this.migration) return this.migration;
-    this.migration = (async () => {
-      for (const task of store
-        .tasks()
-        .filter((task) => task.provider === "cloudflare" && !this.migrated.has(task.id))) {
-        if (task.status === "running" || task.status === "waiting")
-          throw new Error("Stop the legacy cloud task before importing it");
-        await this.create({
-          requestId: task.id,
-          provider: "cloudflare",
-          model: task.model,
-          thinkingLevel: task.thinkingLevel,
-          permissionMode: task.permissionMode,
-          legacy: true,
-        });
-        const send = async (input: unknown) => {
-          const response = await this.fetch(`/api/tasks/${task.id}/import`, {
-            method: "POST",
-            body: JSON.stringify(input),
-          });
-          if (!response.ok) throw await cloudflareResponseError(response);
-        };
-        let before: number | undefined;
-        for (;;) {
-          const page = store.timeline(task.id, before);
-          for (const item of page.items) {
-            await this.uploadImages(
-              item.images?.map((i) => i.id),
-              images,
-            );
-            await send({ items: [item], turns: [] });
-          }
-          await send({ items: [], turns: page.turns });
-          if (!page.hasOlder) break;
-          before = page.items[0].seq;
-        }
-        const queue = store.queue(task.id);
-        let after = "";
-        for (;;) {
-          const receipts = store.requestIds(task.id, after);
-          if (!receipts.length) break;
-          await send({ items: [], turns: [], receipts });
-          after = receipts.at(-1)!;
-        }
-        for (const row of queue)
-          await this.uploadImages(
-            row.images?.map((i) => i.id),
-            images,
-          );
-        await send({ items: [], turns: [], finish: true, task, queue });
-        this.migrated.add(task.id);
-      }
-    })().finally(() => {
-      this.migration = undefined;
-    });
-    return this.migration;
-  }
   /** Upload local draft attachments once; accepted cloud attachments are immutable. */
   async uploadImages(ids: unknown, images: Images) {
     if (ids === undefined) return;
@@ -139,6 +81,10 @@ export class CloudAuthority {
   attach(receive: (packet: ServerPacket) => void) {
     let socket: WebSocket | undefined;
     let subscribed: string | undefined;
+    const pendingReads = new Map<
+      string,
+      { type: string; taskId?: string; [key: string]: unknown }
+    >();
     let closed = false;
     let retry: ReturnType<typeof setTimeout> | undefined;
     const connect = () => {
@@ -154,10 +100,16 @@ export class CloudAuthority {
       this.sockets.add(current);
       current.on("open", () => {
         if (subscribed) current.send(JSON.stringify({ type: "subscribe", taskId: subscribed }));
+        const read = subscribed ? pendingReads.get(subscribed) : undefined;
+        if (read) current.send(JSON.stringify(read));
       });
       current.on("message", (data) => {
         try {
           const packet = JSON.parse(data.toString()) as ServerPacket;
+          if (packet.type === "timeline") {
+            const read = pendingReads.get(packet.taskId);
+            if (read) current.send(JSON.stringify(read));
+          }
           if (packet.type === "bootstrap" || packet.type === "tasks") {
             this.tasks = packet.tasks;
             this.changed();
@@ -176,6 +128,11 @@ export class CloudAuthority {
     return {
       send: (packet: { type: string; taskId?: string; [key: string]: unknown }) => {
         if (packet.type === "subscribe") subscribed = packet.taskId;
+        if (packet.type === "task.read" && packet.taskId) {
+          // One receipt per currently opened task; replay after reconnect/snapshot.
+          pendingReads.clear();
+          pendingReads.set(packet.taskId, packet);
+        }
         if (socket?.readyState === WebSocket.OPEN) socket.send(JSON.stringify(packet));
       },
       close: () => {

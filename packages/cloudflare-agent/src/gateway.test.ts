@@ -10,21 +10,11 @@ const env = {
   CLOUDFLARE_API_TOKEN: "test-cloudflare-token",
   CLOUDFLARE_GATEWAY_ID: "tinycode",
 } as Env;
-const custom = (id = "@cf/test/tool-model", images = true): Env => ({
+const workersModel = "@cf/openai/gpt-oss-120b";
+const custom = (): Env => ({
   ...env,
-  TINYCODE_DEFAULT_MODEL: id,
-  TINYCODE_MODELS: id,
-  TINYCODE_GATEWAY_MODELS: JSON.stringify([
-    {
-      id,
-      name: "Test model",
-      api: "openai-completions",
-      input: images ? ["text", "image"] : ["text"],
-      contextWindow: 32000,
-      maxTokens: 4000,
-      thinkingLevels: [],
-    },
-  ]),
+  TINYCODE_DEFAULT_MODEL: workersModel,
+  TINYCODE_MODELS: workersModel,
 });
 const sse = (events: unknown[]) =>
   new Response(
@@ -44,6 +34,7 @@ describe("Cloudflare model boundary", () => {
     expect(model.headers).toEqual({
       "cf-aig-gateway-id": "tinycode",
       "cf-aig-skip-cache": "true",
+      "cf-aig-collect-log-payload": "false",
     });
     expect(modelCatalog(env).models[0].description).toContain("AI Gateway");
   });
@@ -62,9 +53,6 @@ describe("Cloudflare model boundary", () => {
     expect(() => gatewayCredential({ ...env, CLOUDFLARE_GATEWAY_ID: "bad\r\nheader" })).toThrow(
       "GATEWAY_ID",
     );
-    expect(() => modelCatalog({ ...env, TINYCODE_GATEWAY_MODELS: "bad json" })).toThrow(
-      "JSON array",
-    );
     expect(() => resolveModel(env, "anthropic/unconfigured")).toThrow("not enabled");
   });
 
@@ -74,111 +62,100 @@ describe("Cloudflare model boundary", () => {
       defaultThinkingLevel: null,
       description: expect.stringContaining("Workers AI"),
     });
-    expect(modelCatalog(custom("anthropic/test-model")).models[0].description).toContain(
-      "external model",
-    );
-    expect(normalizeThinkingLevel(custom(), "@cf/test/tool-model", null)).toBe("off");
+    expect(normalizeThinkingLevel(custom(), workersModel, null)).toBe("off");
     expect(() => normalizeThinkingLevel(env, "openai/gpt-5.4", "unsupported")).toThrow(
       "not supported",
     );
   });
 
-  it.each([false, true])(
-    "streams a complete tool roundtrip (shipped GPT OSS preset: %s)",
-    async (shipped) => {
-      const deployment = JSON.parse(
-        readFileSync(new URL("../wrangler.jsonc", import.meta.url), "utf8"),
-      ).vars;
-      const modelId = shipped ? "@cf/openai/gpt-oss-120b" : "@cf/test/tool-model";
-      const config = shipped ? { ...deployment, ...env } : custom();
-      const requests: { url: string; headers: Headers; body: any }[] = [];
-      vi.stubGlobal(
-        "fetch",
-        vi.fn(async (url: string | URL | Request, init?: RequestInit) => {
-          requests.push({
-            url: String(url),
-            headers: new Headers(init?.headers),
-            body: JSON.parse(String(init?.body)),
-          });
-          const chunk = (delta: unknown, finish_reason: string | null = null) => ({
-            id: "chat-test",
-            object: "chat.completion.chunk",
-            created: 1,
-            model: "@cf/test/tool-model",
-            choices: [{ index: 0, delta, finish_reason }],
-          });
-          return requests.length === 1
-            ? sse([
-                chunk({
-                  role: "assistant",
-                  tool_calls: [
-                    {
-                      index: 0,
-                      id: "call_1",
-                      type: "function",
-                      function: { name: "check", arguments: '{"value":' },
-                    },
-                  ],
-                }),
-                chunk({
-                  tool_calls: [{ index: 0, function: { arguments: '"ok"}' } }],
-                }),
-                chunk({}, "tool_calls"),
-              ])
-            : sse([chunk({ role: "assistant", content: "Done" }), chunk({}, "stop")]);
-        }),
+  it("streams a complete tool roundtrip with the shipped GPT OSS preset", async () => {
+    const deployment = JSON.parse(
+      readFileSync(new URL("../wrangler.jsonc", import.meta.url), "utf8"),
+    ).vars;
+    const modelId = workersModel;
+    const config = { ...deployment, ...env };
+    const requests: { url: string; headers: Headers; body: any }[] = [];
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async (url: string | URL | Request, init?: RequestInit) => {
+        requests.push({
+          url: String(url),
+          headers: new Headers(init?.headers),
+          body: JSON.parse(String(init?.body)),
+        });
+        const chunk = (delta: unknown, finish_reason: string | null = null) => ({
+          id: "chat-test",
+          object: "chat.completion.chunk",
+          created: 1,
+          model: "@cf/test/tool-model",
+          choices: [{ index: 0, delta, finish_reason }],
+        });
+        return requests.length === 1
+          ? sse([
+              chunk({
+                role: "assistant",
+                tool_calls: [
+                  {
+                    index: 0,
+                    id: "call_1",
+                    type: "function",
+                    function: { name: "check", arguments: '{"value":' },
+                  },
+                ],
+              }),
+              chunk({
+                tool_calls: [{ index: 0, function: { arguments: '"ok"}' } }],
+              }),
+              chunk({}, "tool_calls"),
+            ])
+          : sse([chunk({ role: "assistant", content: "Done" }), chunk({}, "stop")]);
+      }),
+    );
+    const execute = vi.fn(async () => ({
+      content: [{ type: "text" as const, text: "tool worked" }],
+      details: {},
+    }));
+    const agent = createPiAgent(config, {
+      sessionId: "test",
+      modelId,
+      systemPrompt: "Test",
+      tools: [
+        {
+          name: "check",
+          label: "Check",
+          description: "Test",
+          parameters: Type.Object({ value: Type.String() }),
+          execute,
+        },
+      ],
+    });
+    await agent.prompt("Check", []);
+    expect(agent.state.errorMessage).toBeUndefined();
+    expect(execute).toHaveBeenCalledTimes(1);
+    expect(requests).toHaveLength(2);
+    for (const request of requests) {
+      expect(request.url).toBe(
+        `https://api.cloudflare.com/client/v4/accounts/${env.CLOUDFLARE_ACCOUNT_ID}/ai/v1/chat/completions`,
       );
-      const execute = vi.fn(async () => ({
-        content: [{ type: "text" as const, text: "tool worked" }],
-        details: {},
-      }));
-      const agent = createPiAgent(config, {
-        sessionId: "test",
-        modelId,
-        systemPrompt: "Test",
-        tools: [
-          {
-            name: "check",
-            label: "Check",
-            description: "Test",
-            parameters: Type.Object({ value: Type.String() }),
-            execute,
-          },
-        ],
-      });
-      await agent.prompt(
-        "Check",
-        shipped ? [] : [{ type: "image", mimeType: "image/png", data: "AA==" }],
-      );
-      expect(agent.state.errorMessage).toBeUndefined();
-      expect(execute).toHaveBeenCalledTimes(1);
-      expect(requests).toHaveLength(2);
-      for (const request of requests) {
-        expect(request.url).toBe(
-          `https://api.cloudflare.com/client/v4/accounts/${env.CLOUDFLARE_ACCOUNT_ID}/ai/v1/chat/completions`,
-        );
-        expect(request.headers.get("authorization")).toBe("Bearer test-cloudflare-token");
-        expect(request.headers.get("cf-aig-gateway-id")).toBe("tinycode");
-        expect(request.body.model).toBe(modelId);
-        expect(request.body.reasoning_effort).toBeUndefined();
-      }
-      if (!shipped)
-        expect(JSON.stringify(requests[0].body.messages)).toContain("data:image/png;base64,AA==");
-      expect(requests[0].body.tools[0]).toMatchObject({
-        type: "function",
-        function: { name: "check" },
-      });
-      const toolMessage = requests[1].body.messages.find((m: any) => m.role === "assistant");
-      expect(toolMessage.content).toBe(shipped ? "" : null);
-      expect(requests[1].body.messages).toContainEqual(
-        expect.objectContaining({
-          role: "tool",
-          tool_call_id: "call_1",
-          content: "tool worked",
-        }),
-      );
-    },
-  );
+      expect(request.headers.get("authorization")).toBe("Bearer test-cloudflare-token");
+      expect(request.headers.get("cf-aig-gateway-id")).toBe("tinycode");
+      expect(request.body.model).toBe(modelId);
+      expect(request.body.reasoning_effort).toBeUndefined();
+    }
+    expect(requests[0].body.tools[0]).toMatchObject({
+      type: "function",
+      function: { name: "check" },
+    });
+    const toolMessage = requests[1].body.messages.find((m: any) => m.role === "assistant");
+    expect(toolMessage.content).toBe("");
+    expect(requests[1].body.messages).toContainEqual(
+      expect.objectContaining({
+        role: "tool",
+        tool_call_id: "call_1",
+        content: "tool worked",
+      }),
+    );
+  });
 
   it("uses Responses with qualified model IDs and reasoning, retaining streamed text", async () => {
     let payload: any;
@@ -242,9 +219,9 @@ describe("Cloudflare model boundary", () => {
   it("rejects images for text-only models without sending them or dropping them silently", async () => {
     const fetch = vi.fn();
     vi.stubGlobal("fetch", fetch);
-    const agent = createPiAgent(custom("@cf/test/text-only", false), {
+    const agent = createPiAgent(custom(), {
       sessionId: "test",
-      modelId: "@cf/test/text-only",
+      modelId: workersModel,
       systemPrompt: "Test",
     });
     await agent.prompt("Describe", [{ type: "image", mimeType: "image/png", data: "AA==" }]);

@@ -482,13 +482,6 @@ export class Store {
       return false;
     }
   }
-  requestIds(taskId: string, after = ""): string[] {
-    return (
-      this.db
-        .prepare("SELECT id FROM requests WHERE task_id=? AND id>? ORDER BY id LIMIT 500")
-        .all(taskId, after) as { id: string }[]
-    ).map((row) => row.id);
-  }
   startTurn(taskId: string): Turn {
     const turn: Turn = {
       id: randomUUID(),

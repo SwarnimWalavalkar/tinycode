@@ -110,37 +110,6 @@ export class TaskStore {
   transaction<T>(fn: () => T): T {
     return this.storage.transactionSync(fn);
   }
-  importItems(items: TimelineItem[], turns: Turn[]) {
-    this.transaction(() => {
-      for (const item of items) {
-        if (
-          item.taskId !== this.task().id ||
-          !Number.isSafeInteger(item.seq) ||
-          item.seq < 1
-        )
-          throw new HttpError(400, "Invalid imported item");
-        this.storage.sql.exec(
-          "INSERT OR IGNORE INTO task_items(seq,id,value) VALUES (?,?,?)",
-          item.seq,
-          item.id,
-          JSON.stringify({
-            ...item,
-            text: bounded(item.text),
-            ...(item.detail ? { detail: bounded(item.detail) } : {}),
-          }),
-        );
-      }
-      for (const turn of turns) {
-        if (turn.taskId !== this.task().id)
-          throw new HttpError(400, "Invalid imported turn");
-        this.storage.sql.exec(
-          "INSERT OR IGNORE INTO task_turns VALUES (?,?)",
-          turn.id,
-          JSON.stringify(turn),
-        );
-      }
-    });
-  }
   request(id: string): RequestRow | undefined {
     const row = this.storage.sql
       .exec<{ value: string }>("SELECT value FROM task_requests WHERE id=?", id)

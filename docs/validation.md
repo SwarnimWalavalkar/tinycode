@@ -1,5 +1,30 @@
 # v0 validation
 
+## Cloudflare simplification and review pass — 2026-09-07
+
+- Removed the pre-release local-cloud importer and unused request-bound protocol code;
+  retained the optional Node bridge, DO identities, SQLite schema and existing histories.
+  The default local database had zero legacy cloud tasks before this change.
+- Replaced JSON model metadata with the typed catalog; preserved native Pi model protocols.
+- `pnpm run check`: 106 root cases plus 29 Cloudflare cases (135 total, including
+  expanded parameterized cases), with both TypeScript projects checked. Existing tests
+  were updated for the smaller interfaces; no new regression suite was added.
+- Built the actual Sandbox image and directly exercised Linux/Python, 1 MB output clipped
+  to 128 KiB, deadline expiry, cancellation before startup, and cancellation of a
+  SIGTERM-resistant parent and forked child. No delayed workspace mutation survived.
+- Browser acceptance through real Workers AI and the Worker/DO/Sandbox path returned
+  `Linux` and `42`. Existing cloud conversations remained visible after restart.
+  Stop interrupted a 60-second command at 33 seconds; the retained tool result reports
+  interruption rather than the final echo. Reload preserved both the outputs and interrupted turns.
+- Deferred: attachment claims that precede rejected acceptance can retain unused R2 objects.
+  Fixing this safely requires durable per-request reservations/reconciliation across DOs,
+  not a best-effort rollback that could release a concurrently accepted attachment.
+  This is a single-user storage-retention limitation, not cross-user access.
+- Intentionally retained original request fingerprints after queue edits: they identify the
+  accepted submission for retry deduplication. Edited queue content is not a new submission.
+- Production deployment, deliberately escaped process groups, and hostile tampering with
+  supervisor control files were not tested or claimed supported. No deployment was performed.
+
 ## AI Gateway · September 7, 2026
 
 Cloudflare-mode inference and naming now use AI Gateway's account REST API with a Cloudflare token,
@@ -28,7 +53,7 @@ The Worker now serves the React assets and API directly. Task DO SQLite owns tra
 accepted requests, queues, turns, and replay events. A directory DO provides a retryable task index and
 hibernating WebSocket subscriptions; R2 stores attachments. Node is an optional proxy for cloud tasks.
 
-- `pnpm run check` passed 107 root tests and 23 Cloudflare tests, with both TypeScript projects checked.
+- `pnpm run check` reported 107 root test cases plus 23 Cloudflare test cases (130 total, including expanded parameterized cases), with both TypeScript projects checked.
   The obsolete NDJSON-adapter tests were replaced with cloud-proxy coverage. New SQLite-backed DO tests
   cover detached acceptance/completion, restart recovery without effect replay, steering, ordered queues,
   bounded queue events, stale image edits, idempotent legacy import/receipts, retryable publication,
@@ -261,7 +286,7 @@ node scripts/terminal-smoke.mjs
 The additional `model-smoke.mjs`, `steering-smoke.mjs`, `title-smoke.mjs`, and `image-smoke.mjs` scripts also make real model calls. The sections above describe their scope and invocation. Use disposable data and your own authenticated harness accounts.
 
 Server restart recovery is covered at the SQLite level; resuming all three native harnesses after a server restart has not been separately exercised. Approval UI, harness interruption, and subagent projection need broader real-provider coverage. Terminal replay retains recent bytes rather than a full alternate-screen snapshot. The README records the product limits that follow from this deliberately small implementation.
-# Cloudflare browser acceptance — 2026-09-07
+## Cloudflare browser acceptance — 2026-09-07
 
 Manually exercised the actual UI at `http://localhost:8794` using the Codex in-app
 browser, local Wrangler Durable Objects/R2, local Docker Sandbox, and live GPT OSS 120B

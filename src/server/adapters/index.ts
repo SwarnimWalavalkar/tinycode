@@ -7,7 +7,6 @@ import type { AdapterContext, AdapterSession } from "./types.js";
 import { createCodex } from "./codex.js";
 import { createPi } from "./pi.js";
 import { createClaude } from "./claude.js";
-import { createCloudflare } from "./cloudflare.js";
 import {
   codexTitle,
   claudeTitle,
@@ -37,7 +36,9 @@ export const adapters: Record<
   pi: { name: "Pi", create: createPi, generateTitle: piTitle },
   cloudflare: {
     name: "Cloudflare",
-    create: createCloudflare,
+    create: async () => {
+      throw new Error("Cloud tasks must use CloudAuthority, not the local Runtime");
+    },
     generateTitle: cloudflareTitle,
   },
 };
@@ -45,7 +46,10 @@ export function pendingProviders(): ProviderInfo[] {
   return (Object.keys(adapters) as ProviderId[]).map((id) => ({
     id,
     name: adapters[id].name,
-    command: id === "cloudflare" ? pendingCloudflareCommand() : process.env[`TINYCODE_${id.toUpperCase()}_BIN`] ?? id,
+    command:
+      id === "cloudflare"
+        ? pendingCloudflareCommand()
+        : (process.env[`TINYCODE_${id.toUpperCase()}_BIN`] ?? id),
     available: false,
     readiness: "checking",
     capabilities: {

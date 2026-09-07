@@ -1,7 +1,6 @@
-import type {
-  CloudflareHealth,
-  CloudflareModelCatalog,
-} from "../../shared/cloudflare-agent.js";
+import type { CloudflareHealth } from "../../shared/cloudflare-agent.js";
+
+import type { ModelCatalog } from "../../shared/contracts.js";
 
 const TOKEN_ENV = "TINYCODE_CLOUDFLARE_AGENT_TOKEN";
 
@@ -39,8 +38,9 @@ export async function cloudflareFetch(
   const headers = new Headers(init.headers);
   headers.set("authorization", `Bearer ${token()}`);
   headers.set("accept", "application/json, application/x-ndjson");
-  if (init.body !== undefined && !headers.has("content-type")) headers.set("content-type", "application/json");
-  return fetch(endpoint.href, { ...init, headers });
+  if (init.body !== undefined && !headers.has("content-type"))
+    headers.set("content-type", "application/json");
+  return fetch(endpoint.href, { ...init, headers, redirect: "error" });
 }
 
 export async function cloudflareResponseError(response: Response): Promise<Error> {
@@ -62,12 +62,16 @@ async function json<T>(response: Response): Promise<T> {
 
 export async function cloudflareHealth(base: string): Promise<CloudflareHealth> {
   return json(
-    await cloudflareFetch(base, "/v1/health", { signal: AbortSignal.timeout(6_000) }),
+    await cloudflareFetch(base, "/api/health", {
+      signal: AbortSignal.timeout(6_000),
+    }),
   );
 }
 
-export async function cloudflareModels(base: string): Promise<CloudflareModelCatalog> {
+export async function cloudflareModels(base: string): Promise<ModelCatalog> {
   return json(
-    await cloudflareFetch(base, "/v1/models", { signal: AbortSignal.timeout(15_000) }),
+    await cloudflareFetch(base, "/api/models", {
+      signal: AbortSignal.timeout(15_000),
+    }),
   );
 }

@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { AgentEventProjector, completionEvent } from "./events.js";
+import { AgentEventProjector } from "./events.js";
 
 describe("Pi event projection", () => {
   it("keeps content identities separate across tool-driven assistant messages", () => {
@@ -55,11 +55,4 @@ describe("Pi event projection", () => {
     ]);
   });
 
-  it("reserves done for successful Pi completion", () => {
-    expect(completionEvent()).toEqual({ type: "done" });
-    expect(completionEvent("provider failed")).toEqual({
-      type: "error",
-      message: "provider failed",
-    });
-  });
 });

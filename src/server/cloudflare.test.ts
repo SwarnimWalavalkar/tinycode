@@ -2,77 +2,12 @@ import { afterEach, describe, expect, test, vi } from "vitest";
 import { pendingProviders, probeProviders } from "./adapters/index.js";
 import { cloudflareAgentUrl, cloudflareModels } from "./adapters/cloudflare-client.js";
 import { CloudAuthority } from "./cloud-authority.js";
-import { Store } from "./db.js";
-import { Images } from "./images.js";
-import type { Task } from "../shared/contracts.js";
 const base = "https://agent.example.workers.dev";
 afterEach(() => {
   vi.unstubAllEnvs();
   vi.unstubAllGlobals();
 });
 describe("Cloudflare authority bridge", () => {
-  test("imports every legacy timeline page and receipt without mutating local originals", async () => {
-    vi.stubEnv("TINYCODE_CLOUDFLARE_AGENT_URL", base);
-    vi.stubEnv("TINYCODE_CLOUDFLARE_AGENT_TOKEN", "transport-secret");
-    const store = new Store(":memory:");
-    const task: Task = {
-      id: "legacy-task",
-      projectId: null,
-      provider: "cloudflare",
-      title: "Legacy",
-      status: "complete",
-      model: "openai/gpt-5.4",
-      thinkingLevel: "medium",
-      permissionMode: "native",
-      attentionId: null,
-      cwd: "/unused",
-      worktreePath: null,
-      nativeSessionId: "retained-do",
-      createdAt: "then",
-      updatedAt: "then",
-    };
-    store.insertTask(task);
-    for (let i = 0; i < 125; i++)
-      store.append({ id: `item-${i}`, taskId: task.id, kind: "user", text: `message ${i}` });
-    for (let i = 0; i < 501; i++) store.claimRequest(`request-${i}`, task.id);
-    store.enqueue({
-      id: "pending",
-      taskId: task.id,
-      text: "later",
-      mode: "queue",
-      status: "pending",
-      error: null,
-      createdAt: "then",
-    });
-    const inputs: any[] = [];
-    const fetch = vi.fn(async (url: string, init?: RequestInit) => {
-      const input = JSON.parse(String(init?.body));
-      inputs.push(input);
-      return Response.json(url.endsWith("/api/tasks") ? task : { ok: true });
-    });
-    vi.stubGlobal("fetch", fetch);
-    const cloud = new CloudAuthority(vi.fn());
-    try {
-      await cloud.migrate(store, new Images(store, "/unused"));
-      const calls = fetch.mock.calls.length;
-      await cloud.migrate(store, new Images(store, "/unused"));
-      expect(fetch.mock.calls).toHaveLength(calls);
-      expect(inputs[0]).toMatchObject({ requestId: task.id, legacy: true });
-      expect(inputs.flatMap((input) => input.items ?? [])).toHaveLength(125);
-      expect(inputs.flatMap((input) => input.receipts ?? [])).toHaveLength(501);
-      expect(inputs.at(-1)).toMatchObject({
-        finish: true,
-        task: { title: "Legacy" },
-        queue: [{ id: "pending" }],
-      });
-      expect(store.queue(task.id)).toHaveLength(1);
-      expect(store.requestIds(task.id)).toHaveLength(500);
-      expect(store.timeline(task.id).hasOlder).toBe(true);
-    } finally {
-      cloud.dispose();
-      store.db.close();
-    }
-  });
   test("creates and sends through the cloud API without owning a local run", async () => {
     vi.stubEnv("TINYCODE_CLOUDFLARE_AGENT_URL", base);
     vi.stubEnv("TINYCODE_CLOUDFLARE_AGENT_TOKEN", "transport-secret");
@@ -111,14 +46,14 @@ describe("Cloudflare authority bridge", () => {
     vi.stubEnv("TINYCODE_PI_BIN", "/missing/pi");
     const fetch = vi.fn(async (input: string | URL | Request) => {
       const url = String(input);
-      if (url.endsWith("/v1/health"))
+      if (url.endsWith("/api/health"))
         return Response.json({
           ok: true,
           ready: true,
           version: "0.1.0",
           protocol: 2,
         });
-      if (url.endsWith("/v1/models"))
+      if (url.endsWith("/api/models"))
         return Response.json({
           models: [
             {

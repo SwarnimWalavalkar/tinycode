@@ -2,17 +2,23 @@ import { getSandbox } from "@cloudflare/sandbox";
 import type { Env } from "./env.js";
 import type { VmRuntime, VmSnapshot, VmState } from "./vm-tools.js";
 
-const MAX_OUTPUT = 128 * 1024;
-const PROCESS_EXIT_TIMEOUT = 5_000;
-const clip = (value: string) =>
-  value.length <= MAX_OUTPUT ? value : `${value.slice(0, MAX_OUTPUT)}\n…output truncated`;
-
-function error(value: unknown): Error {
-  return value instanceof Error ? value : new Error(String(value));
-}
-
-function interrupted(signal?: AbortSignal): Error {
-  return signal?.reason instanceof Error ? signal.reason : new Error("VM command was interrupted");
+const CONTROL_TIMEOUT = 6_000;
+const SUPERVISOR = "python3 /usr/local/lib/tinycode-supervisor.py";
+async function deadline<T>(operation: Promise<T>, ms: number): Promise<T> {
+  let timer: ReturnType<typeof setTimeout>;
+  try {
+    return await Promise.race([
+      operation,
+      new Promise<never>((_, reject) => {
+        timer = setTimeout(
+          () => reject(new Error("VM control request timed out; termination is unconfirmed")),
+          ms,
+        );
+      }),
+    ]);
+  } finally {
+    clearTimeout(timer!);
+  }
 }
 
 export class CloudflareSandboxVm implements VmRuntime {
@@ -38,7 +44,10 @@ export class CloudflareSandboxVm implements VmRuntime {
   }
 
   private used(state: VmState): VmSnapshot {
-    const snapshot = { state, lastUsedAt: new Date().toISOString() } satisfies VmSnapshot;
+    const snapshot = {
+      state,
+      lastUsedAt: new Date().toISOString(),
+    } satisfies VmSnapshot;
     this.writeSnapshot(snapshot);
     return snapshot;
   }
@@ -48,83 +57,83 @@ export class CloudflareSandboxVm implements VmRuntime {
       throw new Error("This agent's VM was permanently destroyed");
   }
 
+  private async stopCommand(id: string, expires: number) {
+    const result = await deadline(
+      this.sandbox().exec(`${SUPERVISOR} stop ${id} ${expires}`, {
+        timeout: CONTROL_TIMEOUT,
+      }),
+      CONTROL_TIMEOUT,
+    );
+    if (!result.success)
+      throw new Error("VM termination is unconfirmed; retry Stop before continuing");
+  }
+
+  private clearCommand() {
+    const { commandPending, commandId, commandDeadline, ...snapshot } = this.readSnapshot();
+    this.writeSnapshot(snapshot);
+  }
+
   private async run(command: string, cwd: string, timeout: number, signal?: AbortSignal) {
     this.assertAvailable();
-    if (signal?.aborted) throw interrupted(signal);
-    const sandbox = this.sandbox();
-    this.writeSnapshot({ ...this.readSnapshot(), commandPending: true });
-    const process = await sandbox.startProcess(command, { cwd, autoCleanup: false });
+    if (this.stopActive) throw new Error("Wait for the current VM command to finish");
+    if (signal?.aborted) throw new Error("VM command was interrupted");
+    const id = crypto.randomUUID();
+    const expires = Date.now() + timeout;
+    const payload = btoa(unescape(encodeURIComponent(JSON.stringify([command, cwd]))));
+    this.writeSnapshot({
+      ...this.readSnapshot(),
+      commandPending: true,
+      commandId: id,
+      commandDeadline: expires,
+    });
     let rejectCancelled!: (reason: Error) => void;
-    const cancelled = new Promise<never>((_resolve, reject) => {
+    const cancelled = new Promise<never>((_, reject) => {
       rejectCancelled = reject;
     });
     let stopping: Promise<void> | undefined;
-    let stopReason: Error | undefined;
     const stop = (reason: Error) => {
       if (!stopping) {
-        stopReason = reason;
-        stopping = (async () => {
-          await sandbox.killProcess(process.id, "SIGKILL");
-          await process.waitForExit(PROCESS_EXIT_TIMEOUT);
-        })();
-        void stopping.then(
-          () => rejectCancelled(stopReason!),
-          (failure) =>
-            rejectCancelled(
-              new Error(
-                `${stopReason!.message}; failed to terminate the VM command: ${error(failure).message}`,
-                {
-                  cause: failure,
-                },
-              ),
-            ),
-        );
+        stopping = this.stopCommand(id, expires).then(() => this.clearCommand());
+        void stopping.then(() => rejectCancelled(reason), rejectCancelled);
       }
       return stopping;
     };
     this.stopActive = stop;
-    const onAbort = () => void stop(interrupted(signal));
+    const onAbort = () => {
+      void stop(new Error("VM command was interrupted"));
+    };
     signal?.addEventListener("abort", onAbort, { once: true });
-    const timer = setTimeout(
-      () => void stop(new Error(`VM command timed out after ${timeout} ms`)),
-      timeout,
-    );
-    let cancellationArmed = true;
-    const disarmCancellation = () => {
-      if (!cancellationArmed) return;
-      cancellationArmed = false;
+    const timer = setTimeout(() => {
+      void stop(new Error(`VM command timed out after ${timeout} ms`));
+    }, timeout);
+    try {
+      // Cancellation is armed before lazy startup. The supervisor also checks the absolute
+      // deadline and a cancellation tombstone, so a delayed RPC cannot start cancelled work.
+      const operation = this.sandbox().exec(`${SUPERVISOR} run ${id} ${expires} '${payload}'`, {
+        timeout: timeout + CONTROL_TIMEOUT,
+      });
+      if (signal?.aborted) onAbort();
+      const result = await Promise.race([operation, cancelled]);
+      if (stopping) {
+        await stopping;
+        return await cancelled;
+      }
+      if (!result.success) throw new Error("VM supervisor failed: " + result.stderr.slice(0, 2000));
+      const output = JSON.parse(result.stdout) as {
+        success: boolean;
+        stdout: string;
+        stderr: string;
+        exitCode: number;
+      };
+      this.clearCommand();
+      return output;
+    } catch (error) {
+      if (!stopping) await stop(error instanceof Error ? error : new Error(String(error)));
+      return await cancelled;
+    } finally {
       clearTimeout(timer);
       signal?.removeEventListener("abort", onAbort);
       if (this.stopActive === stop) this.stopActive = undefined;
-    };
-    if (signal?.aborted) onAbort();
-
-    try {
-      let completed: { exitCode: number };
-      try {
-        completed = await Promise.race([process.waitForExit(), cancelled]);
-        if (stopping) {
-          await stopping;
-          return await cancelled;
-        }
-      } catch (failure) {
-        if (stopping) throw failure;
-        await stop(error(failure));
-        return await cancelled;
-      }
-      disarmCancellation();
-      const logs = await process.getLogs();
-      const { commandPending, ...snapshot } = this.readSnapshot();
-      this.writeSnapshot(snapshot);
-      return {
-        success: completed.exitCode === 0,
-        stdout: clip(logs.stdout),
-        stderr: clip(logs.stderr),
-        exitCode: completed.exitCode,
-      };
-    } finally {
-      disarmCancellation();
-      await sandbox.cleanupCompletedProcesses().catch(() => {});
     }
   }
 
@@ -132,7 +141,7 @@ export class CloudflareSandboxVm implements VmRuntime {
     const result = await this.run("mkdir -p /workspace", "/", 15_000, signal);
     if (!result.success)
       throw new Error(
-        `Failed to prepare the VM workspace: ${clip(result.stderr || result.stdout)}`,
+        `Failed to prepare the VM workspace: ${(result.stderr || result.stdout).slice(0, 2000)}`,
       );
     return this.used("ready");
   }
@@ -153,15 +162,13 @@ export class CloudflareSandboxVm implements VmRuntime {
 
   async recover() {
     if (!this.readSnapshot().commandPending) return;
-    const sandbox = this.sandbox();
-    for (const process of await sandbox.listProcesses()) {
-      if (process.status === "running" || process.status === "starting") {
-        await sandbox.killProcess(process.id, "SIGKILL");
-        await process.waitForExit(PROCESS_EXIT_TIMEOUT);
-      }
-    }
-    const { commandPending, ...snapshot } = this.readSnapshot();
-    this.writeSnapshot(snapshot);
+    const { commandId, commandDeadline } = this.readSnapshot();
+    if (!commandId || !commandDeadline)
+      throw new Error(
+        "An older VM command has unconfirmed effects; inspect its sandbox before continuing",
+      );
+    await this.stopCommand(commandId, commandDeadline);
+    this.clearCommand();
   }
 
   async destroy() {

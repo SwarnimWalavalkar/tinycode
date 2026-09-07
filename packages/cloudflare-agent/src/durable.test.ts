@@ -324,73 +324,6 @@ describe("cloud-authoritative tasks", () => {
     expect(store.get("published")).toBe(cursor);
   });
 
-  it("imports legacy history and receipts idempotently, retaining queued work paused", async () => {
-    const { agent, store } = fixture();
-    await agent.fetch(internal("/init", { id: "task-1", legacy: true }));
-    expect(
-      (
-        await agent.fetch(
-          internal("/send", { requestId: "early", text: "wait" }),
-        )
-      ).status,
-    ).toBe(409);
-    const item = {
-      id: "old-item",
-      taskId: "task-1",
-      seq: 12,
-      turnId: "old-turn",
-      kind: "user",
-      text: "old prompt",
-      createdAt: "then",
-    };
-    const page = {
-      items: [item],
-      turns: [
-        {
-          id: "old-turn",
-          taskId: "task-1",
-          status: "complete",
-          startedAt: "then",
-          finishedAt: "then",
-        },
-      ],
-      receipts: ["old-request"],
-    };
-    expect((await agent.fetch(internal("/import", page))).status).toBe(200);
-    expect((await agent.fetch(internal("/import", page))).status).toBe(200);
-    const finish = {
-      items: [],
-      turns: [],
-      finish: true,
-      task: { ...store.task(), title: "Legacy task" },
-      queue: [
-        {
-          id: "queued",
-          text: "later",
-          mode: "queue",
-          createdAt: "then",
-          status: "pending",
-          images: [],
-        },
-      ],
-    };
-    await agent.fetch(internal("/import", finish));
-    await agent.fetch(internal("/import", finish));
-    expect(store.timeline().items).toEqual([item]);
-    expect(store.task().title).toBe("Legacy task");
-    expect(store.queue()).toHaveLength(1);
-    expect(store.get("paused")).toBe(true);
-    expect(
-      (
-        await agent.fetch(
-          internal("/send", { requestId: "old-request", text: "old prompt" }),
-        )
-      ).status,
-    ).toBe(409);
-    await agent.alarm();
-    expect(fakes.createAgent).not.toHaveBeenCalled();
-  });
-
   it("rechecks optimistic image edits after the attachment claim yields", async () => {
     const { agent, store, publish } = fixture();
     await init(agent);
@@ -489,11 +422,11 @@ describe("Worker boundary", () => {
           env,
         )
       ).status,
-    ).toBe(410);
+    ).toBe(404);
     expect(
       await (
         await worker.fetch(
-          new Request("https://app.test/v1/health", { headers }),
+          new Request("https://app.test/api/health", { headers }),
           env,
         )
       ).json(),
