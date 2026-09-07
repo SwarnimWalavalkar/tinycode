@@ -101,7 +101,7 @@ export function createPiAgent(
           const next = (await options?.onPayload?.(payload, model)) ?? payload;
           // Workers AI's GPT OSS Gateway adapter rejects null assistant content
           // when replaying a tool call, although Chat Completions permits it.
-          if (model.id === "@cf/openai/gpt-oss-120b" && model.api === "openai-completions") {
+          if (model.id.startsWith("@cf/") && model.api === "openai-completions") {
             const body = next as {
               messages?: {
                 role: string;

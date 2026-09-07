@@ -38,8 +38,8 @@ function readSettings(): ConnectionSettings {
 export const connection = readSettings();
 export const isLocalServer = (url = connection.url) =>
   ["localhost", "127.0.0.1", "[::1]"].includes(new URL(url).hostname);
-export const connectionLabel = () =>
-  connection.name || (isLocalServer() ? "Local workspace" : new URL(connection.url).host);
+export const connectionLabel = (cloudOnly = false) =>
+  connection.name || (cloudOnly ? "Durable Agent" : isLocalServer() ? "Local server" : new URL(connection.url).host);
 export const serverStorageKey = (key: string) =>
   connection.url === defaultServerUrl ? key : `${key}:${connection.url}`;
 const tokenKey = (url: string) => `tinycode-token:${url}`;

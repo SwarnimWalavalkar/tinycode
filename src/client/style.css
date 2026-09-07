@@ -413,9 +413,9 @@
     border-color: var(--muted);
   }
   .section-label {
-    font-size: 9px;
+    font-size: 11px;
     font-weight: 650;
-    letter-spacing: 1.2px;
+    letter-spacing: 0;
     color: var(--muted);
     display: flex;
     align-items: center;
@@ -1602,8 +1602,10 @@
     box-shadow: 0 6px 24px #0002;
   }
   .task-context-menu button {
+    min-height: 40px;
     display: flex;
     align-items: center;
+    justify-content: flex-start;
     gap: 9px;
     width: 100%;
     padding: 8px 10px;
@@ -1614,6 +1616,40 @@
   .task-context-menu button:hover,
   .task-context-menu button:focus-visible {
     background: var(--highlight);
+  }
+  .task-context-menu .destructive,
+  .button.destructive {
+    color: var(--accent);
+  }
+  .delete-session-description,
+  .delete-session-note {
+    font-size: 13px;
+    line-height: 1.6;
+    margin: 0 0 12px;
+  }
+  .delete-session-note {
+    color: var(--quiet);
+  }
+  .delete-session-warning {
+    margin: 16px 0 0;
+    font-size: 12px;
+    font-weight: 550;
+  }
+  .delete-session-dialog .dialog-actions {
+    border-top: 1px solid var(--line);
+    padding-top: 16px;
+    margin-top: 20px;
+  }
+  .delete-session-dialog .button {
+    min-height: 40px;
+    font-size: 12px;
+  }
+  .delete-session-dialog .button.destructive {
+    background: #a8392b;
+    color: #fff;
+  }
+  .delete-session-dialog .button.destructive:hover:not(:disabled) {
+    background: #902f24;
   }
   .dialog .rename-task-form > input {
     font-family: inherit;
@@ -1736,23 +1772,23 @@
     gap: 20px;
     padding: 30px;
   }
-  .login h1 {
+  .login > h1 {
     font-size: 32px;
     font-weight: 450;
     letter-spacing: -1px;
   }
-  .login p {
+  .login > p {
     font-size: 13px;
     color: var(--quiet);
   }
-  .login form {
+  .login > form {
     display: flex;
     gap: 8px;
     margin-top: 8px;
     max-width: 100%;
     width: 420px;
   }
-  .login input {
+  .login > form > input {
     flex: 1;
     min-width: 0;
   }
@@ -1835,10 +1871,10 @@
     .composer-caption > span:last-child {
       display: none;
     }
-    .login h1 {
+    .login > h1 {
       font-size: 26px;
     }
-    .login form {
+    .login > form {
       flex-direction: column;
     }
     .task-state {
@@ -2024,7 +2060,34 @@
     margin-left: auto;
     margin-right: -7px;
   }
-  .permission-trigger {
+  .permission-info {
+    display: inline-flex;
+    align-items: center;
+    cursor: pointer;
+  }
+  .permission-info:hover,
+  .permission-info[aria-expanded="true"] {
+    background: var(--field);
+  }
+  .permission-menu.permission-explainer {
+    padding: 16px;
+    font-size: 12px;
+    line-height: 1.6;
+  }
+  .permission-explainer strong {
+    font-weight: 550;
+    color: var(--text);
+  }
+  .permission-explainer p {
+    margin: 8px 0 0;
+    color: var(--quiet);
+  }
+  .permission-info:focus-visible {
+    outline: 2px solid var(--accent);
+    outline-offset: 2px;
+  }
+  .permission-trigger,
+  .permission-info {
     gap: 6px;
     padding: 5px 7px;
     min-height: 30px;

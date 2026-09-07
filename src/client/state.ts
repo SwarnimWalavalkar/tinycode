@@ -34,7 +34,16 @@ let shell: ShellState = {
 };
 const shellListeners = new Set<() => void>();
 export function setShell(patch: Partial<ShellState>) {
+  const removedActive =
+    patch.tasks &&
+    shell.activeTaskId &&
+    shell.tasks.some((t) => t.id === shell.activeTaskId) &&
+    !patch.tasks.some((t) => t.id === shell.activeTaskId);
   shell = { ...shell, ...patch };
+  if (removedActive) {
+    selectTask(null);
+    return;
+  }
   for (const fn of shellListeners) fn();
 }
 export const useShell = () =>
@@ -270,7 +279,13 @@ function receive(p: ServerPacket) {
   }
   if (p.type === "item.delta" && p.taskId === timeline.taskId) {
     const row = rows.get(p.id);
-    if (row) receive({ type: "item.patch", taskId: p.taskId, id: p.id, patch: { text: row.text + p.text } });
+    if (row)
+      receive({
+        type: "item.patch",
+        taskId: p.taskId,
+        id: p.id,
+        patch: { text: row.text + p.text },
+      });
   }
   if (p.type === "error") setShell({ error: p.message });
   if (p.type.startsWith("terminal.")) for (const fn of terminalListeners) fn(p);

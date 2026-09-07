@@ -21,10 +21,10 @@ export default {
     try {
       if (!allowedOrigin(request, env))
         throw new HttpError(403, "Origin is not allowed");
-      if (!env.TINYCODE_AGENT_TOKEN || env.TINYCODE_AGENT_TOKEN.length < 24)
+      if (!env.TINYCODE_AGENT_TOKEN?.trim())
         throw new HttpError(
           503,
-          "Configure TINYCODE_AGENT_TOKEN with at least 24 characters",
+          "Configure a non-empty TINYCODE_AGENT_TOKEN",
         );
       if (request.method === "OPTIONS")
         response = new Response(null, { status: 204 });

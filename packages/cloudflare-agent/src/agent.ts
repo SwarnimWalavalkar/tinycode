@@ -97,6 +97,18 @@ export class DurablePiAgent extends DurableObject<Env> {
   private flush(): Promise<void> {
     if (this.flushing) return this.flushing;
     this.flushing = (async () => {
+      const deleted = this.store.get<string>("deleted");
+      if (deleted) {
+        let done = false;
+        while (!done) {
+          const result = await checked<{ done: boolean }>(
+            await this.directory().fetch(internal("/delete", { id: deleted })),
+          );
+          done = result.done;
+        }
+        this.store.set("deletePublished", true);
+        return;
+      }
       for (;;) {
         const through = this.store.get<number>("published") ?? -1;
         const cursor = this.store.cursor();
@@ -345,6 +357,7 @@ export class DurablePiAgent extends DurableObject<Env> {
     }
   }
   private start() {
+    if (this.store.get("deleted")) return;
     if (this.running || this.stopping || this.store.get("paused")) return;
     const next = this.store.requests()[0];
     if (!next || next.status !== "pending") return;
@@ -359,6 +372,11 @@ export class DurablePiAgent extends DurableObject<Env> {
   async alarm() {
     // Install the next recovery wakeup before doing any external work.
     await this.ctx.storage.setAlarm(Date.now() + 30_000);
+    if (this.store.get("deleted")) {
+      await this.flush();
+      await this.ctx.storage.deleteAlarm();
+      return;
+    }
     await this.recover();
     this.start();
     await this.flush();
@@ -480,6 +498,46 @@ export class DurablePiAgent extends DurableObject<Env> {
     try {
       const url = new URL(request.url);
       const action = url.pathname.slice(1);
+      if (request.method === "DELETE" && (!action || action === "state")) {
+        return await this.ctx.blockConcurrencyWhile(async () => {
+          try {
+            if (!this.store.get("deleted")) {
+              if (
+                this.running ||
+                this.store.get("active") ||
+                this.state.vm.commandPending
+              )
+                throw new HttpError(
+                  409,
+                  "Stop the running session before deleting it",
+                );
+              const id = this.store.task().id;
+              await this.arm();
+              await this.flushing;
+              // Clean up the sandbox before removing its owning session. On failure,
+              // keep the session intact so deletion can be retried safely.
+              if (this.state.vm.state !== "destroyed") await this.vm.destroy();
+              if (this.flushTimer) clearTimeout(this.flushTimer);
+              this.flushTimer = undefined;
+              this.store.transaction(() => {
+                this.ctx.storage.sql.exec(
+                  "DELETE FROM state; DELETE FROM state_chunks; DELETE FROM task_items; DELETE FROM task_turns; DELETE FROM task_requests; DELETE FROM task_events; DELETE FROM task_values;",
+                );
+                // Retain only the tombstone so old requests cannot resurrect this identity.
+                this.store.set("deleted", id);
+              });
+              this.state.messages = [];
+            }
+            await this.arm();
+            await this.flush();
+            return json({ ok: true });
+          } catch (error) {
+            return failure(error);
+          }
+        });
+      }
+      if (this.store.get("deleted"))
+        throw new HttpError(410, "This session was deleted");
       if (action === "init" && request.method === "POST") {
         const input = await body(request);
         if (this.store.get("task")) return json(this.store.task());

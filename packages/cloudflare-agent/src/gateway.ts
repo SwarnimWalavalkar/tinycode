@@ -41,6 +41,15 @@ export function gatewayCredential(env: Env): string {
 /** Reviewed capabilities live in code; deployment variables only select model IDs. */
 const MODEL_CATALOG: GatewayDefinition[] = [
   {
+    id: "@cf/openai/gpt-oss-20b",
+    name: "GPT OSS 20B (Workers AI)",
+    api: "openai-completions",
+    input: ["text"],
+    contextWindow: 128000,
+    maxTokens: 4096,
+    thinkingLevels: [],
+  },
+  {
     id: "@cf/openai/gpt-oss-120b",
     name: "GPT OSS 120B (Workers AI)",
     api: "openai-completions",

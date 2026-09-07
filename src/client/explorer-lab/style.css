@@ -87,8 +87,8 @@
   justify-content: center;
 }
 .lab-eyebrow {
-  font-size: 9px;
-  letter-spacing: 1.7px;
+  font-size: 11px;
+  letter-spacing: 0;
   color: var(--muted);
 }
 .lab-notes h1 {

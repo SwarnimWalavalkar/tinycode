@@ -35,7 +35,7 @@ export const adapters: Record<
   },
   pi: { name: "Pi", create: createPi, generateTitle: piTitle },
   cloudflare: {
-    name: "Cloudflare",
+    name: "Durable Agent",
     create: async () => {
       throw new Error("Cloud tasks must use CloudAuthority, not the local Runtime");
     },

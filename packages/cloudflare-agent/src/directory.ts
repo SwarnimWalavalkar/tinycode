@@ -42,7 +42,7 @@ export function providers(env: Env): ProviderInfo[] {
   return [
     {
       id: "cloudflare",
-      name: "Cloudflare",
+      name: "Durable Agent",
       command: "",
       available,
       readiness: available ? "ready" : "unauthenticated",
@@ -105,6 +105,13 @@ export class TaskDirectory extends DurableObject<Env> {
       }>("SELECT value FROM images WHERE id=?", identifier(id))
       .toArray()[0];
     return row ? JSON.parse(row.value) : undefined;
+  }
+  private deleted(id: string) {
+    return (
+      this.ctx.storage.sql
+        .exec<{ cursor: number }>("SELECT cursor FROM tasks WHERE id=?", id)
+        .toArray()[0]?.cursor === -2
+    );
   }
   private putImage(image: ImageRecord) {
     this.ctx.storage.sql.exec(
@@ -179,7 +186,8 @@ export class TaskDirectory extends DurableObject<Env> {
     if (request.method !== "GET")
       throw new HttpError(405, "Method not allowed");
     const image = this.image(id);
-    if (!image || image.deleted) throw new HttpError(404, "Image not found");
+    if (!image || image.deleted || (image.taskId && this.deleted(image.taskId)))
+      throw new HttpError(404, "Image not found");
     const object = await this.env.ATTACHMENTS.get(`images/${id}`);
     if (!object) throw new HttpError(404, "Image not found");
     return new Response(object.body, {
@@ -218,6 +226,44 @@ export class TaskDirectory extends DurableObject<Env> {
         request,
         url.pathname === "/publish" ? 8 * 1024 * 1024 : 1024 * 1024,
       );
+      if (url.pathname === "/delete") {
+        const id = identifier(input.id);
+        this.ctx.storage.sql.exec(
+          "UPDATE tasks SET cursor=-2,value='{}',init='{}' WHERE id=?",
+          id,
+        );
+        for (const socket of this.ctx.getWebSockets()) {
+          const peer = socket.deserializeAttachment() as Peer;
+          if (peer.taskId === id) {
+            this.pending.delete(socket);
+            socket.serializeAttachment({
+              generation: crypto.randomUUID(),
+              syncing: false,
+            } satisfies Peer);
+          }
+          this.send(socket, { type: "tasks", tasks: this.tasks() });
+        }
+        // Bounded, retryable R2 cleanup. The task tombstone immediately denies reads/claims.
+        const images = this.ctx.storage.sql
+          .exec<{
+            id: string;
+          }>("SELECT id FROM images WHERE json_extract(value,'$.taskId')=? AND COALESCE(json_extract(value,'$.deleted'),0)=0 LIMIT 100", id)
+          .toArray();
+        if (images.length) {
+          await this.env.ATTACHMENTS.delete(
+            images.map((image) => `images/${image.id}`),
+          );
+          this.ctx.storage.transactionSync(() => {
+            for (const image of images)
+              this.ctx.storage.sql.exec(
+                "UPDATE images SET value=? WHERE id=?",
+                JSON.stringify({ id: image.id, taskId: id, deleted: true }),
+                image.id,
+              );
+          });
+        }
+        return json({ done: images.length < 100 });
+      }
       if (url.pathname === "/tasks" && request.method === "POST") {
         if (
           input.provider !== "cloudflare" ||
@@ -257,6 +303,8 @@ export class TaskDirectory extends DurableObject<Env> {
       }
       if (url.pathname === "/claim") {
         const taskId = identifier(input.taskId);
+        if (this.deleted(taskId))
+          throw new HttpError(410, "This session was deleted");
         const ids = input.ids;
         if (
           !Array.isArray(ids) ||
@@ -293,6 +341,7 @@ export class TaskDirectory extends DurableObject<Env> {
           }>("SELECT cursor,value FROM tasks WHERE id=?", task.id)
           .toArray()[0];
         if (!prior) throw new HttpError(404, "Task has no directory entry");
+        if (prior.cursor === -2) return json({ ok: true });
         if (cursor > prior.cursor) {
           this.ctx.storage.sql.exec(
             "UPDATE tasks SET cursor=?,value=? WHERE id=?",

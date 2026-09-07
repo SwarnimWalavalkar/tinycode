@@ -79,26 +79,16 @@ import {
   saveConnection,
   serverStorageKey,
 } from "./connection";
-import { TaskContextMenu, RenameTaskDialog, type TaskMenuPosition } from "./TaskNaming";
+import {
+  TaskContextMenu,
+  RenameTaskDialog,
+  DeleteTaskDialog,
+  type TaskMenuPosition,
+} from "./TaskNaming";
 import { ProviderMark, providerNames } from "./Harness";
 
 const Terminal = lazy(() => import("./Terminal"));
 const Files = lazy(() => import("./Files"));
-
-const welcomePhrases = [
-  "What should we work on today?",
-  "What should we build?",
-  "What's on your mind?",
-  "Where should we start?",
-  "What are we making next?",
-  "What are we building?",
-  "What are you thinking about?",
-  "Ready when you are.",
-  "What problem are we chasing?",
-  "What are you curious about?",
-  "What should we learn together?",
-  "What are you trying to understand?",
-];
 
 const fail = (error: unknown) =>
   setShell({ error: error instanceof Error ? error.message : String(error) });
@@ -391,8 +381,8 @@ const Composer = memo(function Composer({
             aria-label={task ? "Message your agent" : "Describe your task"}
             placeholder={
               task
-                ? `Continue with ${providerNames[task.provider]}…`
-                : "Ask anything, or describe a task"
+                ? "Send a follow-up…"
+                : "Ask a question or describe a task…"
             }
             value={text}
             readOnly={sending}
@@ -689,8 +679,8 @@ function Conversation({ task, connected }: { task: Task; connected: boolean }) {
           ) : (
             <div className="empty-conversation">
               <Mark />
-              <h2>A fresh start.</h2>
-              <p>Give {providerNames[task.provider]} something to work on.</p>
+              <h2>No messages yet</h2>
+              <p>Send a message to start this task.</p>
             </div>
           )}
         </div>
@@ -793,8 +783,8 @@ function Login() {
   return (
     <div className="login">
       <Mark />
-      <h1>Your workspace is here.</h1>
-      <p>Enter the access token for {connectionLabel()}.</p>
+      <h1>Connect to Durable Agent</h1>
+      <p>Enter your access token to connect.</p>
       <form onSubmit={(e) => void login(e)}>
         <input
           type="password"
@@ -880,7 +870,6 @@ export function App() {
     requestId: string;
   } | null>(null);
   const createRequest = useRef<{ key: string; id: string } | null>(null);
-  const [welcomeIndex, setWelcomeIndex] = useState(0);
   const task = shell.tasks.find((t) => t.id === shell.activeTaskId);
   const [selectedProject, setSelectedProject] = useState(
     () => localStorage.getItem(serverStorageKey("tinycode-project")) ?? "",
@@ -901,6 +890,7 @@ export function App() {
   const [search, setSearch] = useState(false);
   const [taskMenu, setTaskMenu] = useState<TaskMenuPosition | null>(null);
   const [renaming, setRenaming] = useState<TaskMenuPosition | null>(null);
+  const [deleting, setDeleting] = useState<TaskMenuPosition | null>(null);
   const [sidebar, setSidebar] = useState(() => window.matchMedia("(min-width: 621px)").matches);
   const [files, setFiles] = useState(false);
   const [terminal, setTerminal] = useState(false);
@@ -1021,7 +1011,6 @@ export function App() {
     createAttempt.current = null;
     createRequest.current = null;
     setPermissionMode(defaultPermissionMode[provider]);
-    setWelcomeIndex((index) => (index + 1) % welcomePhrases.length);
     selectTask(null);
     chooseProject(projectId);
     setOptions(false);
@@ -1054,10 +1043,10 @@ export function App() {
             {projectlessTasks.length > 0 && (
               <div className="project-group">
                 <div className="section-label">
-                  <span>SCRATCHPAD</span>
+                  <span>Recents</span>
                   <button
-                    aria-label="New scratchpad task"
-                    title="New scratchpad task"
+                    aria-label="New task"
+                    title="New task"
                     className="icon-button"
                     onClick={() => newTask()}
                   >
@@ -1080,7 +1069,7 @@ export function App() {
             )}
             {!cloudOnly && (
               <div className="section-label">
-                <span>PROJECTS</span>
+                <span>Projects</span>
                 <button
                   aria-label="Open a project"
                   title="Open a project"
@@ -1122,7 +1111,7 @@ export function App() {
                     />
                   ))}
                 {!shell.tasks.some((t) => t.projectId === p.id) && (
-                  <p className="no-tasks">A clean slate.</p>
+                  <p className="no-tasks">No tasks yet.</p>
                 )}
               </div>
             ))}
@@ -1136,9 +1125,9 @@ export function App() {
                 title={connection.url}
                 aria-haspopup="dialog"
               >
-                {isLocalServer() ? <Monitor size={15} /> : <Globe2 size={15} />}
+                {cloudOnly ? <Cloud size={15} /> : isLocalServer() ? <Monitor size={15} /> : <Globe2 size={15} />}
                 <div>
-                  <strong>{connectionLabel()}</strong>
+                  <strong>{connectionLabel(cloudOnly)}</strong>
                   <span role="status">
                     <i className={shell.connected ? "online" : "offline"} />
                     {shell.connected ? "Connected" : shell.loaded ? "Disconnected" : "Connecting…"}
@@ -1168,7 +1157,7 @@ export function App() {
                 <PanelLeftOpen size={17} />
               </button>
             )}
-            <span>{project?.name ?? "Scratchpad"}</span>
+            <span>{project?.name ?? "Recents"}</span>
             <ChevronRight size={13} />
             <strong>{task?.title ?? "New task"}</strong>
           </div>
@@ -1212,7 +1201,7 @@ export function App() {
               ) : (
                 <div className="welcome">
                   <div className="welcome-prompt">
-                    <h1>{welcomePhrases[welcomeIndex]}</h1>
+                    <h1>What would you like to work on?</h1>
                   </div>
                   <div className="welcome-dock">
                     <div
@@ -1225,7 +1214,7 @@ export function App() {
                           </span>
                           <span>
                             <strong>Durable agent</strong>
-                            <small>Pi runs at the edge · Linux wakes on demand</small>
+                            <small>Runs in a Durable Object. Starts a Linux sandbox when needed.</small>
                           </span>
                         </>
                       ) : (
@@ -1338,7 +1327,7 @@ export function App() {
                 key={task.id}
                 theme={dark ? "dark" : "light"}
                 taskId={task.id}
-                workspaceName={project?.name ?? "Scratchpad"}
+                workspaceName={project?.name ?? "Recents"}
                 onClose={() => setFiles(false)}
               />
             </Suspense>
@@ -1373,6 +1362,10 @@ export function App() {
             setRenaming(taskMenu);
             setTaskMenu(null);
           }}
+          onDelete={() => {
+            setDeleting(taskMenu);
+            setTaskMenu(null);
+          }}
         />
       )}
       {renaming && (
@@ -1382,6 +1375,21 @@ export function App() {
             const trigger = renaming.trigger;
             setRenaming(null);
             requestAnimationFrame(() => trigger.focus());
+          }}
+        />
+      )}
+      {deleting && (
+        <DeleteTaskDialog
+          task={deleting.task}
+          onClose={() => {
+            const trigger = deleting.trigger;
+            setDeleting(null);
+            requestAnimationFrame(() =>
+              (trigger.isConnected
+                ? trigger
+                : document.querySelector<HTMLButtonElement>("button")
+              )?.focus(),
+            );
           }}
         />
       )}

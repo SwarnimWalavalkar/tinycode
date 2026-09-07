@@ -65,7 +65,7 @@ Projectless tasks appear under **Scratchpad** in the sidebar. Each has its own p
 
 The [Cloudflare workspace](packages/cloudflare-agent/README.md) deploys the same React UI and its durable-agent backend entirely on Cloudflare; no Node server is required. One `DurablePiAgent` DO per task owns Pi's agent loop, SQLite conversation history, UI transcript, accepted messages, queue, and replay events. A directory DO indexes tasks and fans out WebSocket updates, R2 stores image attachments, and a same-ID Sandbox container starts only when the agent uses its VM tools.
 
-Model calls go through Cloudflare AI Gateway, using a Cloudflare inference token kept in the trusted Worker/DO environment, never in the VM. This is a single-user deployment protected by a separate random access token of at least 24 characters:
+Model calls go through Cloudflare AI Gateway, using a Cloudflare inference token kept in the trusted Worker/DO environment, never in the VM. This is a single-user deployment protected by a separate non-empty access token. Use a strong random token; short or guessable tokens expose all sessions and billable tools:
 
 ```sh
 pnpm --dir packages/cloudflare-agent exec wrangler r2 bucket create tinycode-attachments

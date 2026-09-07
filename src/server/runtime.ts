@@ -43,6 +43,20 @@ export class Runtime {
       .filter((p) => p.approval.taskId === taskId)
       .map((p) => p.approval);
   }
+  deleteTask(taskId: string) {
+    if (this.runs.has(taskId)) throw new Error("Stop the running session before deleting it");
+    const task = this.store.task(taskId);
+    if (task?.status === "running" || task?.status === "waiting")
+      throw new Error("Stop the running session before deleting it");
+    this.store.deleteTask(taskId);
+    const session = this.sessions.get(taskId);
+    this.sessions.delete(taskId);
+    this.interrupted.delete(taskId);
+    this.tasks();
+    void Promise.resolve()
+      .then(() => session?.dispose())
+      .catch(() => {});
+  }
   private tasks() {
     this.publish({ type: "tasks", tasks: this.store.tasks() });
   }

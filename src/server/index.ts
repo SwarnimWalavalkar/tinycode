@@ -320,6 +320,13 @@ const server = createServer(async (req, res) => {
         res.end(Buffer.from(await remote.arrayBuffer()));
         return;
       }
+      if (!match[2] && req.method === "DELETE") {
+        runtime.deleteTask(match[1]);
+        terminals.closeTask(match[1]);
+        void images.prune().catch(() => {});
+        json(res, { ok: true });
+        return;
+      }
       const task = findTask(match[1]);
       if (task.provider === "cloudflare" && !["timeline"].includes(match[2]))
         throw new Error(

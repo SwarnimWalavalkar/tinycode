@@ -69,7 +69,8 @@ export default function ThinkingPicker({
         {label} <RotateCw size={12} />
       </button>
     );
-  const locked = disabled || saving || !options || options.levels.length === 0;
+  if (!options || options.levels.length === 0) return null;
+  const locked = disabled || saving;
   return (
     <label
       className="thinking-picker"

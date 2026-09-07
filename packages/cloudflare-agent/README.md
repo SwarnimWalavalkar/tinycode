@@ -35,7 +35,7 @@ pnpm --dir packages/cloudflare-agent exec wrangler secret put CLOUDFLARE_API_TOK
 pnpm run deploy:cloudflare
 ```
 
-Choose a random access token of at least 24 characters. If a bucket with this name already exists,
+Use a strong random access token. The cloud runtime requires a non-empty token but does not enforce a minimum length. Short or guessable tokens expose all sessions and billable agent tools to anyone who guesses them. If a bucket with this name already exists,
 use that bucket or edit the binding in `wrangler.jsonc` before creating one. Edit `TINYCODE_MODELS`
 and `TINYCODE_DEFAULT_MODEL` there if required. Set `CLOUDFLARE_ACCOUNT_ID` in its `vars` to your real
 32-character Cloudflare account ID. `CLOUDFLARE_GATEWAY_ID` defaults to `default`; create that gateway
@@ -68,8 +68,8 @@ Enable Unified Billing and fund your Cloudflare account for supported external m
 external model still sends inference to that provider; selecting a Workers AI model keeps inference
 on Cloudflare. See the [AI Gateway REST API](https://developers.cloudflare.com/ai-gateway/usage/rest-api/).
 
-The shipped picker includes `openai/gpt-5.4`, `openai/gpt-5.4-mini`, and
-`@cf/openai/gpt-oss-120b`. Existing OpenAI task IDs are preserved but routed through the gateway.
+The shipped picker includes GPT OSS 20B (the budget default) and GPT OSS 120B,
+all hosted on Workers AI. Existing OpenAI task IDs are preserved but routed through the gateway when explicitly enabled.
 To use only Cloudflare-hosted inference (including naming), set both `TINYCODE_DEFAULT_MODEL` and
 `TINYCODE_MODELS` to `@cf/openai/gpt-oss-120b`.
 

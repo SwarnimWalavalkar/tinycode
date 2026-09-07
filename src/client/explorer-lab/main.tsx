@@ -77,7 +77,7 @@ function ExplorerLab() {
       </header>
       <main className="lab-stage">
         <section className="lab-notes">
-          <span className="lab-eyebrow">WORKSPACE EXPLORER</span>
+          <span className="lab-eyebrow">Workspace explorer</span>
           <h1>Room for the details.</h1>
           <p>
             A sample project to try the file tree, code preview, and change

@@ -61,6 +61,9 @@ export class Terminals {
     const s = this.shells.get(id);
     s?.process.kill();
   }
+  closeTask(taskId: string) {
+    for (const shell of this.shells.values()) if (shell.taskId === taskId) shell.process.kill();
+  }
   detach(send: (p: ServerPacket) => void) {
     for (const shell of this.shells.values()) shell.listeners.delete(send);
   }

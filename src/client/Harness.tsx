@@ -8,7 +8,7 @@ export const providerNames: Record<ProviderId, string> = {
   codex: "Codex",
   claude: "Claude Code",
   pi: "Pi",
-  cloudflare: "Cloudflare",
+  cloudflare: "Durable Agent",
 };
 const logos: Partial<Record<ProviderId, string>> = {
   codex: codexLogo,

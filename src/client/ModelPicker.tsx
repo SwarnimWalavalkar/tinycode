@@ -285,9 +285,9 @@ export default function ModelPicker({
                     ? "Checking harness authentication…"
                     : taskId
                       ? provider === "cloudflare"
-                        ? "Check the Cloudflare Worker URL, transport token, and readiness, then refresh."
+                        ? "Check the durable agent server URL and access token, then refresh."
                         : "Sign in to this task’s harness on the server, then refresh."
-                      : "Sign in to a local harness or configure the Cloudflare Worker, then refresh."}
+                      : "Sign in to a local harness or connect a durable agent server, then refresh."}
                 </p>
               )}
               {available &&

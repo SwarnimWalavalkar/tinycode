@@ -116,7 +116,7 @@ export const permissionOptions: Record<ProviderId, readonly PermissionOption[]> 
       id: "native",
       label: "Managed VM tools",
       description:
-        "Run the agent in its Durable Object. It may start and manage its isolated Linux VM on demand.",
+        "Allow the agent to run commands in an isolated Linux sandbox. Files are lost when the sandbox sleeps or is deleted.",
       icon: "auto",
     },
   ],

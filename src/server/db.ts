@@ -337,6 +337,16 @@ export class Store {
       task,
     );
   }
+  deleteTask(id: string) {
+    this.db.transaction(() => {
+      // Detached images are reclaimed by Images.prune; workspace/harness files are untouched.
+      this.db
+        .prepare("UPDATE images SET task_id=NULL, created_at='1970-01-01' WHERE task_id=?")
+        .run(id);
+      this.db.prepare("DELETE FROM requests WHERE task_id=?").run(id);
+      this.db.prepare("DELETE FROM tasks WHERE id=?").run(id);
+    })();
+  }
   task(id: string) {
     const r = this.db.prepare("SELECT * FROM tasks WHERE id = ?").get(id) as TaskRow | undefined;
     return r && task(r);
