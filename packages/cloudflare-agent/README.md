@@ -1,5 +1,25 @@
 # Tinycode on Cloudflare
 
+## Automatic deployment
+
+`.github/workflows/deploy-cloudflare.yml` deploys production on pushes to `main`
+that change `packages/cloudflare-agent/**` or the deployment workflow. It can also
+be run manually from GitHub Actions on `main`. UI-only or shared-code-only changes
+outside this package do not trigger it; use the manual run when needed.
+
+Add the repository Actions secret `CLOUDFLARE_DEPLOY_API_TOKEN` using a dedicated,
+account-scoped Cloudflare token authorized to deploy Workers and Containers,
+including uploading images to the container registry. An inference-only token
+is not sufficient. The workflow reads the account ID from `wrangler.jsonc`.
+Do not copy the local Wrangler OAuth token into GitHub.
+
+Each run installs locked dependencies, runs the application and agent checks,
+then builds and deploys the hosted UI, Worker, and sandbox image. Production
+deployments are serialized and are not canceled mid-rollout. Existing Worker
+secrets are retained; the application access token and inference credential are
+not uploaded or changed by this workflow. The final check verifies public UI
+routing and the API authentication gate, not an inference or VM task.
+
 This package deploys the existing Tinycode UI and its durable-agent backend together. No Node server
 is required for the Cloudflare mode.
 
