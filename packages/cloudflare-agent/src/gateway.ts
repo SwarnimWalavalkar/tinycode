@@ -41,6 +41,24 @@ export function gatewayCredential(env: Env): string {
 /** Reviewed capabilities live in code; deployment variables only select model IDs. */
 const MODEL_CATALOG: GatewayDefinition[] = [
   {
+    id: "@cf/zai-org/glm-5.3-flash",
+    name: "GLM 5.3 Flash (Workers AI)",
+    api: "openai-completions",
+    input: ["text", "image"],
+    contextWindow: 1048576,
+    maxTokens: 8192,
+    thinkingLevels: [],
+  },
+  {
+    id: "@cf/deepseek-ai/deepseek-v4-flash-0731",
+    name: "DeepSeek V4 Flash (Workers AI)",
+    api: "openai-completions",
+    input: ["text"],
+    contextWindow: 1310720,
+    maxTokens: 8192,
+    thinkingLevels: [],
+  },
+  {
     id: "@cf/openai/gpt-oss-20b",
     name: "GPT OSS 20B (Workers AI)",
     api: "openai-completions",
