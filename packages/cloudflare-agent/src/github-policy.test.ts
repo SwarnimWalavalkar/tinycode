@@ -22,9 +22,11 @@ describe("sandbox GitHub API policy", () => {
         expect(await api(`/repos/org/repo/${path}`, method)).toBe(false);
     }
   });
-  it("bounds repeated fragment expansion", async () => {
+  it("memoizes repeated fragments and bounds deep traversal", async () => {
     const fragments = Array.from({ length: 30 }, (_, i) => `fragment F${i} on Query { ${i === 29 ? "viewer { login }" : `...F${i + 1} ...F${i + 1}`} }`).join(" ");
-    expect(await api("/graphql", "POST", `query { ...F0 } ${fragments}`)).toBe(false);
+    expect(await api("/graphql", "POST", `query { ...F0 } ${fragments}`)).toBe(true);
+    const deep = Array.from({length: 200}, (_, i) => `fragment D${i} on Query { ${i === 199 ? "viewer { login }" : `...D${i + 1}`} }`).join(" ");
+    expect(await api("/graphql", "POST", `query { ...D0 } ${deep}`)).toBe(false);
   });
   it("denies writes on read-only routes and unsupported query roots", async () => {
     for (const [path, method] of [["contents/README.md", "PUT"], ["contents/README.md", "DELETE"], ["git/refs", "POST"], ["git/refs/heads/main", "PATCH"]])

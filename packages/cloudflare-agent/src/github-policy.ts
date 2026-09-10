@@ -38,24 +38,31 @@ export async function githubApiAllowed(request: Request): Promise<boolean> {
           .map((d) => [d.name.value, d]),
       );
       let expansionBudget = 10000;
+      const memo = new Map<Set<string>, Map<string, boolean>>();
       function allowed(
         set: SelectionSetNode,
         fields: Set<string>,
         seen = new Set<string>(),
+        depth = 0,
       ): boolean {
+        if (depth > 128) return false;
         return set.selections.every((s) => {
           if (--expansionBudget < 0) return false;
           // A field is a root operation; its response selection is not another root.
           if (s.kind === Kind.FIELD) return fields.has(s.name.value);
           if (s.kind === Kind.INLINE_FRAGMENT)
-            return allowed(s.selectionSet, fields, seen);
+            return allowed(s.selectionSet, fields, seen, depth + 1);
           const name = s.name.value;
           const fragment = fragments.get(name);
-          return (
-            !!fragment &&
-            !seen.has(name) &&
-            allowed(fragment.selectionSet, fields, new Set([...seen, name]))
-          );
+          if (!fragment || seen.has(name)) return false;
+          let cache = memo.get(fields);
+          if (!cache) { cache = new Map(); memo.set(fields, cache); }
+          if (cache.has(name)) return cache.get(name)!;
+          seen.add(name);
+          const result = allowed(fragment.selectionSet, fields, seen, depth + 1);
+          seen.delete(name);
+          cache.set(name, result);
+          return result;
         });
       }
       const operations = document.definitions.filter(
