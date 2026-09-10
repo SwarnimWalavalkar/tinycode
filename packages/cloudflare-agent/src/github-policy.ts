@@ -37,12 +37,15 @@ export async function githubApiAllowed(request: Request): Promise<boolean> {
           .filter((d) => d.kind === Kind.FRAGMENT_DEFINITION)
           .map((d) => [d.name.value, d]),
       );
+      let expansionBudget = 10000;
       function allowed(
         set: SelectionSetNode,
         fields: Set<string>,
         seen = new Set<string>(),
       ): boolean {
         return set.selections.every((s) => {
+          if (--expansionBudget < 0) return false;
+          // A field is a root operation; its response selection is not another root.
           if (s.kind === Kind.FIELD) return fields.has(s.name.value);
           if (s.kind === Kind.INLINE_FRAGMENT)
             return allowed(s.selectionSet, fields, seen);
