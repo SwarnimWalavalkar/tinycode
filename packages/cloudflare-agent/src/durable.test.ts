@@ -167,6 +167,17 @@ beforeEach(() => {
 });
 
 describe("cloud-authoritative tasks", () => {
+  it("retains workspace, creator, and session GitHub identity across reload and repeated init", async () => {
+    const { ctx, env, agent, store } = fixture();
+    const ownership = { workspaceId: "personal-github-1", createdBy: "github-1", githubAccountId: "github-1" };
+    expect((await agent.fetch(internal("/init", { id: "stable-task", model: "openai/gpt-5.4", ...ownership }))).status).toBe(200);
+    expect(store.get("ownership")).toEqual(ownership);
+    const restored = new DurablePiAgent(ctx, env);
+    expect((await restored.fetch(internal("/init", { id: "stable-task", workspaceId: "personal-github-2", createdBy: "github-2", githubAccountId: "github-2" }))).status).toBe(200);
+    expect(store.get("ownership")).toEqual(ownership);
+    expect(store.task().id).toBe("stable-task");
+  });
+
   it("persists acceptance before dispatch, survives reconstruction, and completes without any client", async () => {
     const { agent, ctx, env, store } = fixture();
     await init(agent);

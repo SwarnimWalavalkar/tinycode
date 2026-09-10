@@ -1,4 +1,4 @@
-import { directoryName, imageKey, LEGACY_OWNER, ownerId } from "./ownership.js";
+import { directoryName, imageKey, LEGACY_OWNER, ownerId, personalWorkspace, workspaceId, type TaskOwnership } from "./ownership.js";
 import { DurableObject } from "cloudflare:workers";
 import type { Agent } from "@earendil-works/pi-agent-core";
 import type {
@@ -73,7 +73,7 @@ export class DurablePiAgent extends DurableObject<Env> {
         this.state.vm = snapshot;
         this.persist();
       },
-      () => this.store.get<string>("owner") ?? LEGACY_OWNER,
+      () => this.store.get<TaskOwnership>("ownership")?.githubAccountId ?? LEGACY_OWNER,
     );
   }
   private persist() {
@@ -82,8 +82,9 @@ export class DurablePiAgent extends DurableObject<Env> {
     this.history.save(this.state);
   }
   private directory() {
-    const owner = this.store.get<string>("owner") ?? LEGACY_OWNER;
-    const stub = this.env.DIRECTORY.get(this.env.DIRECTORY.idFromName(directoryName(owner)));
+    const ownership = this.store.get<TaskOwnership>("ownership");
+    const owner = ownership?.createdBy ?? LEGACY_OWNER;
+    const stub = this.env.DIRECTORY.get(this.env.DIRECTORY.idFromName(directoryName(ownership?.workspaceId ?? "default")));
     return { fetch: (request: Request) => {
       const headers = new Headers(request.headers);
       headers.set("x-tinycode-owner", owner);
@@ -309,7 +310,7 @@ export class DurablePiAgent extends DurableObject<Env> {
   private async nativeImages(images: ImageAttachment[] = []) {
     return Promise.all(
       images.map(async (image) => {
-        const object = await this.env.ATTACHMENTS.get(imageKey(this.store.get<string>("owner") ?? LEGACY_OWNER, image.id));
+        const object = await this.env.ATTACHMENTS.get(imageKey(this.store.get<TaskOwnership>("ownership")?.workspaceId ?? "default", image.id));
         if (!object) throw new Error("An attachment is unavailable");
         const bytes = new Uint8Array(await object.arrayBuffer());
         let binary = "";
@@ -528,14 +529,14 @@ export class DurablePiAgent extends DurableObject<Env> {
               if (this.state.vm.state !== "destroyed") await this.vm.destroy();
               if (this.flushTimer) clearTimeout(this.flushTimer);
               this.flushTimer = undefined;
-              const owner = this.store.get<string>("owner") ?? LEGACY_OWNER;
+              const ownership = this.store.get<TaskOwnership>("ownership");
               this.store.transaction(() => {
                 this.ctx.storage.sql.exec(
                   "DELETE FROM state; DELETE FROM state_chunks; DELETE FROM task_items; DELETE FROM task_turns; DELETE FROM task_requests; DELETE FROM task_events; DELETE FROM task_values;",
                 );
                 // Retain only the tombstone so old requests cannot resurrect this identity.
                 this.store.set("deleted", id);
-                this.store.set("owner", owner);
+                if (ownership) this.store.set("ownership", ownership);
               });
               this.state.messages = [];
             }
@@ -553,7 +554,13 @@ export class DurablePiAgent extends DurableObject<Env> {
         const input = await body(request);
         if (this.store.get("task")) return json(this.store.task());
         const id = identifier(input.id);
-        this.store.set("owner", ownerId(input.owner ?? LEGACY_OWNER));
+        const createdBy = ownerId(input.createdBy ?? LEGACY_OWNER);
+        const ownership: TaskOwnership = {
+          workspaceId: workspaceId(input.workspaceId ?? personalWorkspace(createdBy)),
+          createdBy,
+          githubAccountId: ownerId(input.githubAccountId ?? createdBy),
+        };
+        this.store.set("ownership", ownership);
         const model = input.model ?? defaultModelId(this.env);
         resolveModel(this.env, model);
         const permissionMode = parsePermissionMode(

@@ -25,9 +25,18 @@ Configure one **GitHub OAuth App** for this deployment (not a GitHub App install
    for `repo` and `workflow` permissions. The flow also requests `offline_access`;
    expiring grants refresh automatically, while non-expiring grants are supported.
 
-Sign-in creates a Tinycode account keyed by the stable GitHub user ID. Tasks, image
-attachments, WebSocket subscriptions, and sandboxes are owned by that account. All
-subsequent sandboxes inherit its GitHub connection automatically. Users can run:
+Sign-in creates a Tinycode account keyed by the stable GitHub user ID and routes it
+to a personal workspace (`personal-github-ID`). The workspace owns the task directory,
+attachments, and WebSocket subscriptions. Conversations use server-generated stable
+IDs, with Agent DO names `task:ID`; client creation IDs are workspace-local retry keys.
+Each agent retains `{ workspaceId, createdBy, githubAccountId }`. Its GitHub identity
+is fixed to the creator's connected account at creation, independent of later messages.
+All subsequent sandboxes inherit that connection automatically. There is no identity
+picker, membership system, or sharing UI in this iteration.
+
+These workspace namespaces replace the unshipped user-scoped OAuth task namespaces;
+pre-change local OAuth test conversations are not migrated. Legacy token-mode task
+addresses remain unchanged. Users can run:
 
 ```sh
 git clone https://github.com/OWNER/PRIVATE-REPO.git
@@ -108,7 +117,7 @@ is required for the Cloudflare mode.
 Browser -> Worker assets + GitHub session (or legacy deployment-token API)
               |
               +-- Accounts DO: users, encrypted GitHub grants, sessions, OAuth state
-              +-- TaskDirectory DO per user: task index, attachment metadata, WebSocket fanout
+              +-- TaskDirectory DO per workspace: task index, attachment metadata, WebSocket fanout
               |
               +-- one DurablePiAgent DO per task
               |     +-- SQLite: transcript, Pi history, queue, receipts, replay events

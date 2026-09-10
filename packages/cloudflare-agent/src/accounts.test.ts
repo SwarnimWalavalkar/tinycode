@@ -384,35 +384,23 @@ describe("account isolation through the Worker and directory", () => {
       requestId: "same-id",
       owner: "github-2",
     };
-    expect(
-      (
-        await worker.fetch(
-          request("/api/tasks", a.token, "POST", create, {
-            "x-tinycode-owner": "github-2",
-          }),
-          env,
-        )
-      ).status,
-    ).toBe(200);
-    expect(agentNames).toContain("github-1:same-id");
-    expect(
-      (await worker.fetch(request("/api/tasks/same-id", b.token), env)).status,
-    ).toBe(404);
-    expect(
-      (
-        await worker.fetch(
-          request("/api/tasks/same-id/init", a.token, "POST", {
-            owner: "github-2",
-          }),
-          env,
-        )
-      ).status,
-    ).toBe(404);
-    expect(
-      (await worker.fetch(request("/api/tasks", b.token, "POST", create), env))
-        .status,
-    ).toBe(200);
-    expect(agentNames).toContain("github-2:same-id");
+    const first = await worker.fetch(request("/api/tasks", a.token, "POST", {
+      ...create, workspaceId: "personal-github-2", createdBy: "github-2", githubAccountId: "github-2",
+    }, { "x-tinycode-owner": "github-2" }), env);
+    expect(first.status).toBe(200);
+    const taskA = await first.json() as any;
+    expect(taskA).toMatchObject({workspaceId: "personal-github-1", createdBy: "github-1", githubAccountId: "github-1"});
+    expect(taskA.id).not.toBe("same-id");
+    expect(agentNames).toContain(`task:${taskA.id}`);
+    expect((await worker.fetch(request(`/api/tasks/${taskA.id}`, b.token), env)).status).toBe(404);
+    expect((await worker.fetch(request(`/api/tasks/${taskA.id}/init`, a.token, "POST", {}), env)).status).toBe(404);
+    const retry = await worker.fetch(request("/api/tasks", a.token, "POST", create), env);
+    expect((await retry.json() as any).id).toBe(taskA.id);
+    const second = await worker.fetch(request("/api/tasks", b.token, "POST", create), env);
+    expect(second.status).toBe(200);
+    const taskB = await second.json() as any;
+    expect(taskB.id).not.toBe(taskA.id);
+    expect(agentNames).toContain(`task:${taskB.id}`);
     expect(
       (
         await worker.fetch(
@@ -437,13 +425,13 @@ describe("account isolation through the Worker and directory", () => {
       },
       close: vi.fn(),
     };
-    contexts.get("github-2")!.sockets.push(socket);
+    contexts.get("personal-github-2")!.sockets.push(socket);
     const before = agentFetch.mock.calls.length;
     await directories
-      .get("github-2")!
+      .get("personal-github-2")!
       .webSocketMessage(
         socket as any,
-        JSON.stringify({ type: "subscribe", taskId: "not-owned" }),
+        JSON.stringify({ type: "subscribe", taskId: taskA.id }),
       );
     expect(packets.at(-1)).toMatchObject({
       type: "error",
@@ -481,8 +469,8 @@ describe("account isolation through the Worker and directory", () => {
     ).toBe(404);
     expect((await worker.fetch(upload(b.token), env)).status).toBe(200);
     expect([...objects.keys()]).toEqual([
-      "users/github-1/images/same-image",
-      "users/github-2/images/same-image",
+      "workspaces/personal-github-1/images/same-image",
+      "workspaces/personal-github-2/images/same-image",
     ]);
     await worker.fetch(
       request("/api/images/same-image", a.token, "DELETE"),

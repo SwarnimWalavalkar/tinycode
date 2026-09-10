@@ -20,7 +20,7 @@ import {
   githubAuthEnabled,
   assertGithubConfig,
 } from "./accounts.js";
-import { directoryName, LEGACY_OWNER } from "./ownership.js";
+import { directoryName, personalWorkspace, LEGACY_OWNER } from "./ownership.js";
 export { Accounts } from "./accounts.js";
 export { Sandbox } from "./sandbox.js";
 export { ContainerProxy } from "@cloudflare/sandbox";
@@ -149,7 +149,7 @@ export default {
           );
         const owner = session?.user.id ?? LEGACY_OWNER;
         const directory = env.DIRECTORY.get(
-          env.DIRECTORY.idFromName(directoryName(owner)),
+          env.DIRECTORY.idFromName(directoryName(personalWorkspace(owner))),
         );
         const ownedRequest = (target: URL | string, source = request) => {
           const headers = new Headers(source.headers);
