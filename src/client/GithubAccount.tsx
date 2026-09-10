@@ -8,6 +8,7 @@ interface AuthInfo {
   user: { id: string; login: string; name: string; connected: boolean } | null;
 }
 export function useGithubAuth() {
+  const [error, setError] = useState("");
   const [auth, setAuth] = useState<AuthInfo | null>(null);
   useEffect(() => {
     const controller = new AbortController();
@@ -18,7 +19,10 @@ export function useGithubAuth() {
           signal: controller.signal,
           cache: "no-store",
         });
-        const data = response.ok ? await response.json() : null;
+        if (!response.ok) throw new Error("Could not load sign-in settings. Check the server configuration and try again.");
+        const data = await response.json();
+        if (data?.mode !== "github" && data?.mode !== "token") throw new Error("Invalid sign-in settings response.");
+        setError("");
         if (!controller.signal.aborted) {
           const nextIdentity = data?.user?.id ?? null;
           if (identity !== undefined && identity !== nextIdentity) {
@@ -30,8 +34,8 @@ export function useGithubAuth() {
             data?.mode === "github" ? data : { mode: "token", user: null },
           );
         }
-      } catch {
-        if (!controller.signal.aborted) setAuth({ mode: "token", user: null });
+      } catch (error) {
+        if (!controller.signal.aborted) setError(error instanceof Error ? error.message : "Could not load sign-in settings.");
       }
     }
     void load();
@@ -41,7 +45,7 @@ export function useGithubAuth() {
       window.removeEventListener("focus", load);
     };
   }, []);
-  return { auth, setAuth };
+  return { auth, setAuth, error };
 }
 
 export function GithubSignIn({ reconnect = false }: { reconnect?: boolean }) {

@@ -306,6 +306,29 @@ describe("GitHub accounts", () => {
     );
     expect(exchanges).toBe(1);
   });
+  it("clears terminal refresh failures but retains grants on provider outages", async () => {
+    for (const [error, status, connected] of [["invalid_grant", 400, false], ["server_error", 503, true]] as const) {
+      const { accounts } = fixture();
+      await signIn(accounts, 1, { expires_in: 1, refresh_token: "refresh", refresh_token_expires_in: 1000 });
+      vi.stubGlobal("fetch", vi.fn(async () => Response.json({ error }, { status })));
+      await accounts.github("github-1", new Request("https://api.github.com/user"));
+      expect((await accounts.profile("github-1")).connected).toBe(connected);
+    }
+  });
+  it("disconnect prevents an in-flight refresh from restoring a grant", async () => {
+    const { accounts } = fixture();
+    await signIn(accounts, 1, { expires_in: 1, refresh_token: "refresh", refresh_token_expires_in: 1000 });
+    let release!: (value: Response) => void;
+    let started!: () => void;
+    const ready = new Promise<void>(resolve => { started = resolve; });
+    vi.stubGlobal("fetch", vi.fn(() => { started(); return new Promise<Response>(resolve => { release = resolve; }); }));
+    const pending = accounts.github("github-1", new Request("https://api.github.com/user"));
+    await ready;
+    await accounts.disconnect("github-1");
+    release(Response.json({ access_token: "renewed", token_type: "bearer", scope: "repo,workflow", expires_in: 3600 }));
+    expect((await pending).status).toBe(401);
+    expect((await accounts.profile("github-1")).connected).toBe(false);
+  });
   it("marks revoked credentials disconnected without retrying a write", async () => {
     const { accounts } = fixture();
     await signIn(accounts);

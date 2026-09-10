@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 
 // Local-only, no provider calls: start Wrangler with dummy GitHub OAuth settings.
-const base = process.env.TINYCODE_SMOKE_URL ?? "http://localhost:8799";
+const base = process.env.TINYCODE_SMOKE_URL ?? "http://localhost:8794";
 assert(
   ["localhost", "127.0.0.1"].includes(new URL(base).hostname),
   "This test only targets localhost",

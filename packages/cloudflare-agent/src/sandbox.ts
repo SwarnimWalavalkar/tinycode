@@ -5,16 +5,20 @@ import { ownerId } from "./ownership.js";
 
 export class Sandbox extends CloudflareSandbox<Env> {
   override interceptHttps = true;
+  private boundOwner?: string;
   /** Ownership only arrives through trusted RPC, never from guest headers. */
   async bindGithub(owner: string) {
     ownerId(owner);
+    if (this.boundOwner === owner) return;
     await this.ctx.blockConcurrencyWhile(async () => {
+      if (this.boundOwner === owner) return;
       const retained = await this.ctx.storage.get<string>("github-owner");
       if (retained && retained !== owner)
         throw new Error("Sandbox belongs to another account");
       await this.setOutboundByHost("github.com", "github", { owner });
       await this.setOutboundByHost("api.github.com", "github", { owner });
-      await this.ctx.storage.put("github-owner", owner);
+      if (!retained) await this.ctx.storage.put("github-owner", owner);
+      this.boundOwner = owner;
     });
   }
 }

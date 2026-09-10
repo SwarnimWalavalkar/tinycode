@@ -96,8 +96,10 @@ describe("Cloudflare Sandbox VM", () => {
       let snapshot: VmSnapshot = { state: "absent", lastUsedAt: null };
       const vm = new CloudflareSandboxVm(env, id, () => snapshot, (next) => { snapshot = next; }, () => "github-1");
       await vm.exec("git clone https://github.com/alice/private.git", "/workspace", 30_000);
+      await vm.exec("git status", "/workspace", 30_000);
     }
-    expect(sandbox.bindGithub.mock.calls).toEqual([["github-1"], ["github-1"]]);
+    expect(sandbox.bindGithub).toHaveBeenCalledTimes(4);
+    expect(profile).toHaveBeenCalledTimes(2);
     for (const [, options] of sandbox.exec.mock.calls) {
       expect(options.env).toMatchObject({ GH_TOKEN: "TINYCODE_GITHUB_CREDENTIAL", GIT_AUTHOR_EMAIL: "1+alice@users.noreply.github.com", GIT_TERMINAL_PROMPT: "0" });
     }

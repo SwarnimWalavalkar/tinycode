@@ -1,3 +1,4 @@
+import { githubApiAllowed } from "./github-policy.js";
 import { DurableObject } from "cloudflare:workers";
 import type { Env } from "./env.js";
 import { HttpError } from "./http.js";
@@ -173,12 +174,14 @@ export class Accounts extends DurableObject<Env> {
         signal: AbortSignal.timeout(15_000),
       },
     );
-    if (!response.ok)
+    const data = await response.json().catch(() => ({})) as Record<string, unknown>;
+    if (["invalid_grant", "bad_refresh_token", "expired_token", "bad_verification_code"].includes(String(data.error)))
+      throw new HttpError(401, "Reconnect GitHub to continue");
+    if (!response.ok || data.error)
       throw new HttpError(
         502,
         "GitHub authorization is unavailable; try again",
       );
-    const data = (await response.json()) as Record<string, unknown>;
     if (typeof data.access_token !== "string" || data.token_type !== "bearer")
       throw new HttpError(401, "Reconnect GitHub to continue");
     const scopes =
@@ -285,11 +288,8 @@ export class Accounts extends DurableObject<Env> {
   }
   async disconnect(owner: string) {
     ownerId(owner);
-    await this.refreshing.get(owner)?.catch(() => {});
-    this.ctx.storage.sql.exec(
-      "UPDATE users SET credential=NULL WHERE id=?",
-      owner,
-    );
+    const current = this.ctx.storage.sql.exec<{ credential: string | null }>("SELECT credential FROM users WHERE id=?", owner).toArray()[0]?.credential;
+    this.ctx.storage.sql.exec("UPDATE users SET credential=NULL WHERE id=? AND credential=?", owner, current ?? null);
   }
   private async credential(owner: string): Promise<Credential> {
     if (this.refreshing.has(owner)) return this.refreshing.get(owner)!;
@@ -352,11 +352,7 @@ export class Accounts extends DurableObject<Env> {
   async github(owner: string, request: Request): Promise<Response> {
     const url = new URL(request.url);
     // API token-management endpoints must never expose or mint credentials in the VM.
-    const api =
-      url.origin === "https://api.github.com" &&
-      /^\/(?:repos\/|user(?:\/repos)?$|user\/orgs$|orgs\/[^/]+\/repos$|search\/|graphql$)/.test(
-        url.pathname,
-      );
+    const api = await githubApiAllowed(request);
     const git =
       url.origin === "https://github.com" &&
       /^\/[A-Za-z0-9_.-]+\/[A-Za-z0-9_.-]+\/(?:info\/refs|git-upload-pack|git-receive-pack)$/.test(

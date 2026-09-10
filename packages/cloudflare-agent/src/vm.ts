@@ -24,6 +24,7 @@ async function deadline<T>(operation: Promise<T>, ms: number): Promise<T> {
 }
 
 export class CloudflareSandboxVm implements VmRuntime {
+  private githubIdentity?: { owner: string; name: string; email: string };
   private stopActive: ((reason: Error) => Promise<void>) | undefined;
 
   constructor(
@@ -84,11 +85,15 @@ export class CloudflareSandboxVm implements VmRuntime {
     const owner = this.readOwner();
     if (owner !== LEGACY_OWNER) {
       await deadline(this.sandbox().bindGithub(owner), CONTROL_TIMEOUT);
-      const account = await deadline(this.env.ACCOUNTS.get(this.env.ACCOUNTS.idFromName("accounts")).profile(owner), CONTROL_TIMEOUT);
+      if (this.githubIdentity?.owner !== owner) {
+        const account = await deadline(this.env.ACCOUNTS.get(this.env.ACCOUNTS.idFromName("accounts")).profile(owner), CONTROL_TIMEOUT);
+        this.githubIdentity = { owner, name: account.name || account.login, email: account.email };
+      }
+      const account = this.githubIdentity;
       githubEnv = {
         GH_TOKEN: "TINYCODE_GITHUB_CREDENTIAL", GH_PROMPT_DISABLED: "1", GIT_TERMINAL_PROMPT: "0",
-        GIT_AUTHOR_NAME: account.name || account.login, GIT_AUTHOR_EMAIL: account.email,
-        GIT_COMMITTER_NAME: account.name || account.login, GIT_COMMITTER_EMAIL: account.email,
+        GIT_AUTHOR_NAME: account.name, GIT_AUTHOR_EMAIL: account.email,
+        GIT_COMMITTER_NAME: account.name, GIT_COMMITTER_EMAIL: account.email,
         GIT_CONFIG_COUNT: "2",
         GIT_CONFIG_KEY_0: "url.https://github.com/.insteadOf", GIT_CONFIG_VALUE_0: "git@github.com:",
         GIT_CONFIG_KEY_1: "url.https://github.com/.insteadOf", GIT_CONFIG_VALUE_1: "ssh://git@github.com/",

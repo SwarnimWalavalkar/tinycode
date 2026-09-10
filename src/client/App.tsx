@@ -758,7 +758,7 @@ function Conversation({ task, connected }: { task: Task; connected: boolean }) {
 }
 
 function Login() {
-  const { auth } = useGithubAuth();
+  const { auth, error: authError } = useGithubAuth();
   const [token, setToken] = useState("");
   const [error, setError] = useState("");
   const [settings, setSettings] = useState(false);
@@ -804,7 +804,7 @@ function Login() {
         <button className="button primary" disabled={busy}>
           {busy ? "Checking…" : "Connect"} <ArrowUpRight size={16} />
         </button>
-      </form></> : <p>Connecting…</p>}
+      </form></> : authError ? <p className="form-error">{authError} <button className="button" onClick={() => location.reload()}>Retry</button></p> : <p>Connecting…</p>}
       {error && <p className="form-error">{error}</p>}
       <button
         className="button"
