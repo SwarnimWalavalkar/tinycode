@@ -6,6 +6,7 @@ import type { Env } from "./env.js";
 const sandbox = vi.hoisted(() => ({
   exec: vi.fn(),
   destroy: vi.fn(),
+  bindGithub: vi.fn(),
 }));
 
 vi.mock("@cloudflare/sandbox", () => ({ getSandbox: () => sandbox }));
@@ -85,6 +86,21 @@ describe("Cloudflare Sandbox VM", () => {
       stdout,
       stderr,
     }),
+  });
+
+  it("automatically binds every new sandbox to its user without passing a real GitHub token", async () => {
+    sandbox.exec.mockResolvedValue(result(0, "ok"));
+    const profile = vi.fn(async () => ({ name: "Alice", login: "alice", email: "1+alice@users.noreply.github.com" }));
+    const env = { SANDBOX: {}, ACCOUNTS: { idFromName: (s: string) => s, get: () => ({ profile }) } } as unknown as Env;
+    for (const id of ["first-sandbox", "next-sandbox"]) {
+      let snapshot: VmSnapshot = { state: "absent", lastUsedAt: null };
+      const vm = new CloudflareSandboxVm(env, id, () => snapshot, (next) => { snapshot = next; }, () => "github-1");
+      await vm.exec("git clone https://github.com/alice/private.git", "/workspace", 30_000);
+    }
+    expect(sandbox.bindGithub.mock.calls).toEqual([["github-1"], ["github-1"]]);
+    for (const [, options] of sandbox.exec.mock.calls) {
+      expect(options.env).toMatchObject({ GH_TOKEN: "TINYCODE_GITHUB_CREDENTIAL", GIT_AUTHOR_EMAIL: "1+alice@users.noreply.github.com", GIT_TERMINAL_PROMPT: "0" });
+    }
   });
 
   it("does not report ready when workspace preparation fails", async () => {

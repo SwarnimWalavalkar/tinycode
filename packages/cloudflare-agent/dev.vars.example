@@ -9,3 +9,10 @@ CLOUDFLARE_API_TOKEN=""
 # Restrict local conversations AND title suggestions to Workers AI.
 TINYCODE_DEFAULT_MODEL="@cf/openai/gpt-oss-120b"
 TINYCODE_MODELS="@cf/openai/gpt-oss-120b"
+
+# Optional GitHub account mode: configure ALL THREE with a separate development
+# OAuth App whose callback is http://localhost:8794/api/auth/github/callback.
+# Leave absent for the token-mode smoke test. Never commit real values.
+# GITHUB_OAUTH_CLIENT_ID=""
+# GITHUB_OAUTH_CLIENT_SECRET=""
+# TINYCODE_AUTH_SECRET="" # Random, stable encryption secret; at least 32 characters.
