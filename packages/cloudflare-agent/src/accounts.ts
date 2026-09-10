@@ -185,8 +185,8 @@ export class Accounts extends DurableObject<Env> {
         502,
         "GitHub authorization is unavailable; try again",
       );
-    if (typeof data.access_token !== "string" || data.token_type !== "bearer")
-      throw new HttpError(401, "Reconnect GitHub to continue");
+    if (typeof data.access_token !== "string" || !data.access_token || data.token_type !== "bearer")
+      throw new HttpError(502, "Invalid GitHub authorization response; try again");
     const scopes =
       typeof data.scope === "string" ? data.scope.split(/[ ,]+/) : [];
     if (!scopes.includes("repo") || !scopes.includes("workflow"))

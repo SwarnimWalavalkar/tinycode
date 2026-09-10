@@ -309,9 +309,11 @@ describe("GitHub accounts", () => {
   it("treats malformed token responses as provider errors without deleting the grant", async () => {
     const { accounts } = fixture();
     await signIn(accounts, 1, { expires_in: 1, refresh_token: "refresh", refresh_token_expires_in: 1000 });
-    vi.stubGlobal("fetch", vi.fn(async () => Response.json(null)));
-    expect((await accounts.github("github-1", new Request("https://api.github.com/user"))).status).toBe(502);
-    expect((await accounts.profile("github-1")).connected).toBe(true);
+    for (const payload of [null, {}, { access_token: "", token_type: "bearer" }, { access_token: 12, token_type: "bearer" }]) {
+      vi.stubGlobal("fetch", vi.fn(async () => Response.json(payload)));
+      expect((await accounts.github("github-1", new Request("https://api.github.com/user"))).status).toBe(502);
+      expect((await accounts.profile("github-1")).connected).toBe(true);
+    }
   });
   it("clears terminal refresh failures but retains grants on provider outages", async () => {
     for (const [error, status, connected] of [["invalid_grant", 400, false], ["server_error", 503, true]] as const) {
