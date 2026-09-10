@@ -1351,6 +1351,30 @@
     border-color: var(--line);
     color: var(--quiet);
   }
+  .github-sign-in {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    gap: 10px;
+    min-height: 44px;
+    padding: 11px 20px;
+    border-radius: 8px;
+    background: var(--text);
+    color: var(--bg);
+    font-size: 13px;
+    font-weight: 600;
+    line-height: 20px;
+    text-decoration: none;
+    white-space: nowrap;
+    transition: background 120ms ease;
+  }
+  .github-sign-in:hover {
+    background: color-mix(in srgb, var(--text) 85%, var(--bg));
+  }
+  .github-sign-in:focus-visible {
+    outline: 2px solid var(--accent);
+    outline-offset: 4px;
+  }
   .terminal-pane header {
     height: 36px;
     flex-shrink: 0;

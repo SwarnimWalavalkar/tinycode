@@ -1,5 +1,95 @@
 # Tinycode on Cloudflare
 
+## GitHub sign-in and repository access
+
+Configure one **GitHub OAuth App** for this deployment (not a GitHub App installation):
+
+1. Register the OAuth App in GitHub developer settings. Set its homepage to your
+   Tinycode origin and its authorization callback to
+   `https://YOUR-TINYCODE-HOST/api/auth/github/callback`.
+2. Configure these Worker secrets from the monorepo root:
+
+   ```sh
+   pnpm --dir packages/cloudflare-agent exec wrangler secret put GITHUB_OAUTH_CLIENT_ID
+   pnpm --dir packages/cloudflare-agent exec wrangler secret put GITHUB_OAUTH_CLIENT_SECRET
+   pnpm --dir packages/cloudflare-agent exec wrangler secret put TINYCODE_AUTH_SECRET
+   ```
+
+   Use a randomly generated value of at least 32 characters for `TINYCODE_AUTH_SECRET`
+   (for example, generate one with `openssl rand -hex 32`). It encrypts the retained
+   GitHub credentials. Keep it stable; changing it without migrating stored credentials
+   requires users to reconnect. Never put credentials in chat, the browser bundle, or Git.
+3. Deploy the Worker and sandbox image using the normal deployment command below.
+   The `v3` migration creates the `Accounts` SQLite Durable Object.
+4. Open the hosted Tinycode website and choose **Sign in with GitHub**. GitHub asks
+   for `repo` and `workflow` permissions. The flow also requests `offline_access`;
+   expiring grants refresh automatically, while non-expiring grants are supported.
+
+Sign-in creates a Tinycode account keyed by the stable GitHub user ID and routes it
+to a personal workspace (`personal-github-ID`). The workspace owns the task directory,
+attachments, and WebSocket subscriptions. Conversations use server-generated stable
+IDs, with Agent DO names `task:ID`; client creation IDs are workspace-local retry keys.
+Each agent retains `{ workspaceId, createdBy, githubAccountId }`. Its GitHub identity
+is fixed to the creator's connected account at creation, independent of later messages.
+All subsequent sandboxes inherit that connection automatically. There is no identity
+picker, membership system, or sharing UI in this iteration.
+
+These workspace namespaces replace the unshipped user-scoped OAuth task namespaces;
+pre-change local OAuth test conversations are not migrated. Legacy token-mode task
+addresses remain unchanged. Users can run:
+
+```sh
+git clone https://github.com/OWNER/PRIVATE-REPO.git
+cd PRIVATE-REPO
+git switch -c feat/my-change
+# edit files and run tests
+git add .
+git commit -m "feat: implement change"
+git push -u origin HEAD
+gh pr create --title "Implement change" --body "Description and validation"
+```
+
+`git` and `gh` authenticate as the user. Commit author and committer defaults use
+that user's name and GitHub noreply email. Common GitHub SSH remote forms are
+rewritten to HTTPS automatically. Branch protections and organization OAuth/SSO
+policies still apply. Basic clone/fetch/push and GitHub repository/PR APIs are the
+supported paths; private archive downloads, release-asset uploads, Git LFS downloads, and GitHub Enterprise hosts are not
+implemented in this iteration.
+
+The sandbox receives only a placeholder `GH_TOKEN`, never the real token. Trusted
+Cloudflare outbound handlers identify the sandbox owner and inject credentials into
+GitHub Git transport and supported API requests. The private account DO stores
+AES-GCM-encrypted credentials, coalesces refreshes, and clears revoked connections.
+It does not automatically retry writes. After an interrupted push or PR creation,
+inspect GitHub before retrying: durable transcripts do not make external effects
+exactly once.
+
+The sidebar's GitHub account button provides disconnect/reconnect and sign-out.
+Disconnect removes Tinycode's stored grant; the user can also revoke the OAuth App
+in GitHub settings. Sign-out revokes the current browser session and closes that
+user's live sockets; it does not stop background tasks or disconnect GitHub. Browser
+sessions last 30 days. Account mode uses the hosted site's same-origin cookies and
+is not supported through the legacy deployment-token Node bridge.
+
+When any GitHub auth setting is present, all three settings are required and the
+shared deployment token is **not** accepted. With all three absent, the original
+single-user token mode remains available for local development and existing installs.
+Existing token-mode tasks remain in the legacy namespace; they are not assigned to
+an arbitrary GitHub user. This iteration does not migrate those tasks.
+
+Workspace files remain ephemeral. This feature adds durable accounts, ownership,
+and credentials, **not workspace persistence**.
+
+For local OAuth testing, register a separate OAuth App with callback
+`http://localhost:8794/api/auth/github/callback`, set these three values in `.dev.vars`,
+and use the local server directly. Keep them absent when running the token-mode
+HTTP smoke test. With dummy GitHub settings, `TINYCODE_SMOKE_URL=http://localhost:8794
+node scripts/cloudflare-auth-smoke.mjs` checks the local OAuth redirect and auth gate
+without contacting GitHub. Unit tests mock GitHub; they do not prove live provider behavior.
+A deployment canary should sign in with two accounts, verify task/image/socket
+isolation, and exercise private clone, commit, push, PR creation, another new
+sandbox, disconnect, and reconnect. Test token renewal with an expiring grant.
+
 ## Automatic deployment
 
 `.github/workflows/deploy-cloudflare.yml` deploys production on pushes to `main`
@@ -24,9 +114,10 @@ This package deploys the existing Tinycode UI and its durable-agent backend toge
 is required for the Cloudflare mode.
 
 ```text
-Browser -> Worker assets + authenticated API
+Browser -> Worker assets + GitHub session (or legacy deployment-token API)
               |
-              +-- TaskDirectory DO: task index, attachment metadata, WebSocket fanout
+              +-- Accounts DO: users, encrypted GitHub grants, sessions, OAuth state
+              +-- TaskDirectory DO per workspace: task index, attachment metadata, WebSocket fanout
               |
               +-- one DurablePiAgent DO per task
               |     +-- SQLite: transcript, Pi history, queue, receipts, replay events
@@ -63,8 +154,8 @@ in your account or set the slug of an existing one. The deploy command builds th
 and Sandbox image and applies the DO migrations. Open the printed HTTPS Worker URL and sign in
 with the access token. Do not put the model API key into the browser.
 
-This is a **single-user deployment**: its token grants access to every task and attachment. It does
-not provide accounts, organizations, per-user authorization, or a public signup flow. Browser login
+Without GitHub OAuth configured, this is a **single-user deployment**: its token grants access to every task and attachment. Token mode does
+not provide accounts or per-user authorization. Use GitHub sign-in above for user accounts. Browser login
 sets a Secure, HttpOnly, SameSite=Strict cookie derived from the token, with a signed seven-day
 expiry checked by the server. Upgrading from the pre-release cookie format requires signing in again. Bearer authentication and
 authenticated WebSocket subprotocols are also supported. Same-origin access is the default;
@@ -165,12 +256,11 @@ the full Durable Object identity in base36 to fit the Sandbox SDK's 63-character
 It sleeps after ten idle minutes, and can be removed explicitly. Its filesystem is **ephemeral**
 across sleep/replacement/destruction; durable conversation storage does not make workspace files
 durable. Cloud tasks are projectless, with VM tool calls and results in the transcript. Remote
-terminal, file explorer, diff inspection, workspace snapshots and private-repository provisioning
-are not implemented.
+terminal, file explorer, diff inspection, and workspace snapshots are not implemented. GitHub-connected users can clone private repositories directly.
 
-The Sandbox receives no GitHub, registry or other integration credentials. Public clones work
-with public network access; private clones need a separately implemented scoped credential broker
-or provisioning mechanism. Pi uses Responses or Chat Completions through AI Gateway for enabled models.
+The Sandbox receives no real GitHub credentials. GitHub account mode injects them outside the
+VM through outbound handlers; token mode supports public clones only. Registry and other integration
+credentials are not provisioned. Pi uses Responses or Chat Completions through AI Gateway for enabled models.
 Additional VM implementations belong behind `VmRuntime`; only Cloudflare Sandbox is implemented.
 
 Foreground commands use the image's Python supervisor, not SDK process records. It caps each
@@ -259,8 +349,8 @@ eviction timing, placement, remote container cold-start behavior, or operation w
 laptop off. Those require a deployed canary.
 
 GPT OSS 120B is text-only in our preset: skip image-understanding tests. The credential-free
-HTTP smoke covers attachment storage separately. Private repository credentials, durable
-workspace files, and remote file/diff/terminal UI are not implemented.
+HTTP smoke covers attachment storage separately. Live private-repository access needs a configured GitHub OAuth connection. Durable
+workspace files and remote file/diff/terminal UI are not implemented.
 
 If inference fails, inspect the visible error and Gateway dashboard: check account/token
 scope for 401/403, model support/configuration for 400, and quota/credits for 429 or billing

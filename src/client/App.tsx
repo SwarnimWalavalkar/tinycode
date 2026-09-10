@@ -71,6 +71,7 @@ import { IMAGE_TYPES } from "../shared/images";
 import Dialog from "./Dialog";
 import ProjectDialog from "./ProjectDialog";
 import ConnectionDialog from "./ConnectionDialog";
+import GithubAccount, { GithubSignIn, useGithubAuth } from "./GithubAccount";
 import {
   checkConnection,
   connection,
@@ -757,6 +758,7 @@ function Conversation({ task, connected }: { task: Task; connected: boolean }) {
 }
 
 function Login() {
+  const { auth, error: authError } = useGithubAuth();
   const [token, setToken] = useState("");
   const [error, setError] = useState("");
   const [settings, setSettings] = useState(false);
@@ -784,7 +786,11 @@ function Login() {
     <div className="login">
       <Mark />
       <h1>Connect to Durable Agent</h1>
-      <p>Enter your access token to connect.</p>
+      {auth?.mode === "github" ? <>
+        <p>Connect once to start tasks and use your GitHub repositories.</p>
+        <GithubSignIn />
+        {new URLSearchParams(location.search).has("login_error") && <p className="form-error">GitHub sign-in did not complete. Please try again and allow repository access.</p>}
+      </> : auth ? <><p>Enter your access token to connect.</p>
       <form onSubmit={(e) => void login(e)}>
         <input
           type="password"
@@ -798,7 +804,7 @@ function Login() {
         <button className="button primary" disabled={busy}>
           {busy ? "Checking…" : "Connect"} <ArrowUpRight size={16} />
         </button>
-      </form>
+      </form></> : authError ? <p className="form-error">{authError} <button className="button" onClick={() => location.reload()}>Retry</button></p> : <p>Connecting…</p>}
       {error && <p className="form-error">{error}</p>}
       <button
         className="button"
@@ -1117,6 +1123,7 @@ export function App() {
             ))}
           </nav>
           <div className="sidebar-bottom">
+            <GithubAccount />
             <div className="host-row">
               <button
                 className="host-connection"

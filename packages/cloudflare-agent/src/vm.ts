@@ -1,6 +1,8 @@
 import { getSandbox } from "@cloudflare/sandbox";
 import type { Env } from "./env.js";
 import type { VmRuntime, VmSnapshot, VmState } from "./vm-tools.js";
+import type { Sandbox } from "./sandbox.js";
+import { LEGACY_OWNER } from "./ownership.js";
 
 const CONTROL_TIMEOUT = 6_000;
 const SUPERVISOR = "python3 /usr/local/lib/tinycode-supervisor.py";
@@ -22,6 +24,8 @@ async function deadline<T>(operation: Promise<T>, ms: number): Promise<T> {
 }
 
 export class CloudflareSandboxVm implements VmRuntime {
+  // Commit identity is a snapshot for this adapter; credentials are checked on every request.
+  private githubIdentity?: { owner: string; name: string; email: string };
   private stopActive: ((reason: Error) => Promise<void>) | undefined;
 
   constructor(
@@ -29,6 +33,7 @@ export class CloudflareSandboxVm implements VmRuntime {
     private id: string,
     private readSnapshot: () => VmSnapshot,
     private writeSnapshot: (snapshot: VmSnapshot) => void,
+    private readOwner: () => string = () => LEGACY_OWNER,
   ) {}
 
   private sandbox() {
@@ -37,7 +42,7 @@ export class CloudflareSandboxVm implements VmRuntime {
     const sandboxId = /^[a-f0-9]{64}$/i.test(this.id)
       ? `tc-${BigInt(`0x${this.id}`).toString(36)}`
       : this.id;
-    return getSandbox(this.env.SANDBOX, sandboxId, {
+    return getSandbox<Sandbox>(this.env.SANDBOX, sandboxId, {
       enableDefaultSession: false,
       sleepAfter: "10m",
     });
@@ -77,6 +82,26 @@ export class CloudflareSandboxVm implements VmRuntime {
     this.assertAvailable();
     if (this.stopActive) throw new Error("Wait for the current VM command to finish");
     if (signal?.aborted) throw new Error("VM command was interrupted");
+    let githubEnv: Record<string, string> = {};
+    const owner = this.readOwner();
+    if (owner !== LEGACY_OWNER) {
+      await deadline(this.sandbox().bindGithub(owner), CONTROL_TIMEOUT);
+      if (this.githubIdentity?.owner !== owner) {
+        const account = await deadline(this.env.ACCOUNTS.get(this.env.ACCOUNTS.idFromName("accounts")).profile(owner), CONTROL_TIMEOUT);
+        this.githubIdentity = { owner, name: account.name || account.login, email: account.email };
+      }
+      const account = this.githubIdentity;
+      githubEnv = {
+        GH_TOKEN: "TINYCODE_GITHUB_CREDENTIAL", GH_PROMPT_DISABLED: "1", GIT_TERMINAL_PROMPT: "0",
+        GIT_AUTHOR_NAME: account.name, GIT_AUTHOR_EMAIL: account.email,
+        GIT_COMMITTER_NAME: account.name, GIT_COMMITTER_EMAIL: account.email,
+        GIT_CONFIG_COUNT: "2",
+        GIT_CONFIG_KEY_0: "url.https://github.com/.insteadOf", GIT_CONFIG_VALUE_0: "git@github.com:",
+        GIT_CONFIG_KEY_1: "url.https://github.com/.insteadOf", GIT_CONFIG_VALUE_1: "ssh://git@github.com/",
+      };
+      if (signal?.aborted) throw new Error("VM command was interrupted");
+      if (this.stopActive) throw new Error("Wait for the current VM command to finish");
+    }
     const id = crypto.randomUUID();
     const expires = Date.now() + timeout;
     const payload = btoa(unescape(encodeURIComponent(JSON.stringify([command, cwd]))));
@@ -111,6 +136,7 @@ export class CloudflareSandboxVm implements VmRuntime {
       // deadline and a cancellation tombstone, so a delayed RPC cannot start cancelled work.
       const operation = this.sandbox().exec(`${SUPERVISOR} run ${id} ${expires} '${payload}'`, {
         timeout: timeout + CONTROL_TIMEOUT,
+        env: githubEnv,
       });
       if (signal?.aborted) onAbort();
       const result = await Promise.race([operation, cancelled]);

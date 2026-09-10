@@ -58,7 +58,7 @@ export function createVmTools(vm: VmRuntime): AgentTool<any>[] {
       name: "vm_exec",
       label: "Run in Linux VM",
       description:
-        "Run a shell command in this agent's isolated Linux sandbox. Starting the VM is automatic when needed.",
+        "Run a shell command in this agent's isolated Linux sandbox. Starting the VM is automatic when needed. For GitHub accounts, git and gh are already authenticated as the user; use normal HTTPS clone/push and gh pr create commands. Never request or print credentials. Git author identity is configured automatically. After an interrupted push or PR creation, inspect remote state before retrying.",
       parameters: Type.Object({
         command: Type.String({ minLength: 1, maxLength: 32_000 }),
         cwd: Type.Optional(Type.String({ minLength: 1, maxLength: 1_024 })),

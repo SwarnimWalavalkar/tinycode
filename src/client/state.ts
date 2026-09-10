@@ -336,7 +336,7 @@ export async function startConnection() {
     setShell({
       loaded: true,
       error: shell.authRequired
-        ? "Enter this server's access token"
+        ? "Sign in to continue"
         : "Cannot reach the server. Reconnecting…",
     });
     if (!shell.authRequired) reconnect = setTimeout(() => void startConnection(), 2000);

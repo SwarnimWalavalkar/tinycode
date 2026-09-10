@@ -26,7 +26,9 @@ import { modelCatalog } from "./models.js";
 import { gatewayCredential } from "./gateway.js";
 import type { CloudEvent } from "./task-store.js";
 
-type Peer = { taskId?: string; generation: string; syncing: boolean };
+type Peer = { taskId?: string; generation: string; syncing: boolean; expiresAt?: number };
+import { agentName, imageKey, LEGACY_OWNER, ownerId, personalWorkspace } from "./ownership.js";
+
 type ImageRecord = ImageAttachment & {
   taskId: string | null;
   deleted?: boolean;
@@ -57,18 +59,28 @@ export function providers(env: Env): ProviderInfo[] {
   ];
 }
 
-/** Single-user directory and socket fanout. Task DOs own task state; this SQL index is a projection. */
+/** Per-user directory and socket fanout. Task DOs own task state; this SQL index is a projection. */
 export class TaskDirectory extends DurableObject<Env> {
   private pending = new Map<WebSocket, CloudEvent[]>();
   constructor(ctx: DurableObjectState, env: Env) {
     super(ctx, env);
     ctx.storage.sql.exec(`
+      CREATE TABLE IF NOT EXISTS task_creation_requests (request_id TEXT PRIMARY KEY, task_id TEXT NOT NULL);
+      CREATE TABLE IF NOT EXISTS workspace (id TEXT PRIMARY KEY, created_by TEXT NOT NULL);
       CREATE TABLE IF NOT EXISTS tasks (id TEXT PRIMARY KEY, cursor INTEGER NOT NULL, value TEXT NOT NULL, init TEXT NOT NULL);
       CREATE TABLE IF NOT EXISTS images (id TEXT PRIMARY KEY, value TEXT NOT NULL);
     `);
     for (const socket of ctx.getWebSockets())
       if ((socket.deserializeAttachment() as Peer)?.syncing)
         socket.close(1012, "Reconnect to synchronize");
+  }
+  private owner() {
+    return this.ctx.storage.sql.exec<{ owner: string }>("SELECT created_by AS owner FROM workspace").toArray()[0]?.owner ?? LEGACY_OWNER;
+  }
+  private workspace() { return this.ctx.storage.sql.exec<{ id: string }>("SELECT id FROM workspace").toArray()[0]?.id ?? "default"; }
+  private ownsTask(id: string) {
+    if (!this.ctx.storage.sql.exec("SELECT id FROM tasks WHERE id=? AND cursor != -2", id).toArray().length)
+      throw new HttpError(404, "Task not found");
   }
   private tasks(): Task[] {
     return this.ctx.storage.sql
@@ -88,6 +100,8 @@ export class TaskDirectory extends DurableObject<Env> {
   }
   private send(socket: WebSocket, packet: ServerPacket) {
     try {
+      const peer = socket.deserializeAttachment() as Peer;
+      if (peer.expiresAt && peer.expiresAt <= Date.now()) { socket.close(1008, "Sign in again"); return; }
       socket.send(JSON.stringify(packet));
     } catch {
       try {
@@ -96,7 +110,7 @@ export class TaskDirectory extends DurableObject<Env> {
     }
   }
   private task(id: string) {
-    return this.env.AGENTS.get(this.env.AGENTS.idFromName(identifier(id)));
+    return this.env.AGENTS.get(this.env.AGENTS.idFromName(agentName(this.workspace(), identifier(id))));
   }
   private image(id: string): ImageRecord | undefined {
     const row = this.ctx.storage.sql
@@ -136,7 +150,7 @@ export class TaskDirectory extends DurableObject<Env> {
               409,
               "This image ID was deleted; attach it again",
             );
-          const key = `images/${id}`;
+          const key = imageKey(this.workspace(), id);
           const hash = Array.from(
             new Uint8Array(
               await crypto.subtle.digest("SHA-256", data.slice().buffer),
@@ -176,7 +190,7 @@ export class TaskDirectory extends DurableObject<Env> {
           const image = this.image(id);
           if (image?.taskId) return json({ ok: true });
           if (image) this.putImage({ ...image, deleted: true });
-          await this.env.ATTACHMENTS.delete(`images/${id}`);
+          await this.env.ATTACHMENTS.delete(imageKey(this.workspace(), id));
           return json({ ok: true });
         } catch (error) {
           return failure(error);
@@ -188,12 +202,12 @@ export class TaskDirectory extends DurableObject<Env> {
     const image = this.image(id);
     if (!image || image.deleted || (image.taskId && this.deleted(image.taskId)))
       throw new HttpError(404, "Image not found");
-    const object = await this.env.ATTACHMENTS.get(`images/${id}`);
+    const object = await this.env.ATTACHMENTS.get(imageKey(this.workspace(), id));
     if (!object) throw new HttpError(404, "Image not found");
     return new Response(object.body, {
       headers: {
         "content-type": image.mimeType,
-        "cache-control": "private, max-age=86400, immutable",
+        "cache-control": "no-store",
         "x-content-type-options": "nosniff",
       },
     });
@@ -201,6 +215,21 @@ export class TaskDirectory extends DurableObject<Env> {
   async fetch(request: Request): Promise<Response> {
     try {
       const url = new URL(request.url);
+      const owner = ownerId(request.headers.get("x-tinycode-owner") ?? LEGACY_OWNER);
+      this.ctx.storage.sql.exec("INSERT INTO workspace SELECT ?,? WHERE NOT EXISTS (SELECT 1 FROM workspace)", personalWorkspace(owner), owner);
+      if (this.owner() !== owner) throw new HttpError(403, "Account mismatch");
+      if (url.pathname === "/close-sockets") {
+        for (const socket of this.ctx.getWebSockets()) socket.close(1008, "Signed out");
+        return json({ ok: true });
+      }
+      const route = url.pathname.match(/^\/task\/([A-Za-z0-9_-]+)(?:\/(.*))?$/);
+      if (route) {
+        if (route[2] === "init") throw new HttpError(404, "Not found");
+        this.ownsTask(route[1]);
+        const target = new URL(`https://internal/${route[2] ?? "state"}`);
+        target.search = url.search;
+        return await this.task(route[1]).fetch(new Request(target, request));
+      }
       if (url.pathname === "/socket") {
         if (request.headers.get("upgrade")?.toLowerCase() !== "websocket")
           throw new HttpError(426, "Expected WebSocket");
@@ -209,6 +238,7 @@ export class TaskDirectory extends DurableObject<Env> {
         pair[1].serializeAttachment({
           generation: crypto.randomUUID(),
           syncing: false,
+          expiresAt: Number(request.headers.get("x-tinycode-session-expires")) || undefined,
         } satisfies Peer);
         this.send(pair[1], this.bootstrap());
         return new Response(null, {
@@ -239,6 +269,7 @@ export class TaskDirectory extends DurableObject<Env> {
             socket.serializeAttachment({
               generation: crypto.randomUUID(),
               syncing: false,
+              expiresAt: peer.expiresAt,
             } satisfies Peer);
           }
           this.send(socket, { type: "tasks", tasks: this.tasks() });
@@ -251,7 +282,7 @@ export class TaskDirectory extends DurableObject<Env> {
           .toArray();
         if (images.length) {
           await this.env.ATTACHMENTS.delete(
-            images.map((image) => `images/${image.id}`),
+            images.map((image) => imageKey(this.workspace(), image.id)),
           );
           this.ctx.storage.transactionSync(() => {
             for (const image of images)
@@ -274,8 +305,18 @@ export class TaskDirectory extends DurableObject<Env> {
             400,
             "Choose a Cloudflare task with no local project",
           );
-        const id = identifier(input.requestId ?? crypto.randomUUID());
-        const init = { ...input, id };
+        const requestId = identifier(input.requestId ?? crypto.randomUUID());
+        let id = requestId;
+        if (this.owner() !== LEGACY_OWNER) {
+          // Caller IDs are idempotency keys, never globally addressable actor IDs.
+          // Retain mappings after deletion: a late create retry must not resurrect a task.
+          this.ctx.storage.sql.exec("INSERT OR IGNORE INTO task_creation_requests VALUES (?,?)", requestId, crypto.randomUUID());
+          id = this.ctx.storage.sql.exec<{ task_id: string }>("SELECT task_id FROM task_creation_requests WHERE request_id=?", requestId).toArray()[0].task_id;
+        }
+        const { owner: _owner, workspaceId: _workspace, createdBy: _creator, githubAccountId: _github, ...settings } = input;
+        const init = { ...settings, id, ...(this.owner() === LEGACY_OWNER ? {} : {
+          workspaceId: this.workspace(), createdBy: this.owner(), githubAccountId: this.owner(),
+        }) };
         const existing = this.ctx.storage.sql
           .exec<{ init: string }>("SELECT init FROM tasks WHERE id=?", id)
           .toArray()[0];
@@ -384,6 +425,8 @@ export class TaskDirectory extends DurableObject<Env> {
   async webSocketMessage(socket: WebSocket, data: string | ArrayBuffer) {
     let generation: string | undefined;
     try {
+      const auth = socket.deserializeAttachment() as Peer;
+      if (auth.expiresAt && auth.expiresAt <= Date.now()) { socket.close(1008, "Sign in again"); return; }
       if (typeof data !== "string" || data.length > 4096)
         throw new HttpError(400, "Invalid socket message");
       const message = JSON.parse(data);
@@ -393,7 +436,9 @@ export class TaskDirectory extends DurableObject<Env> {
       }
       if (message.type === "subscribe") {
         const taskId = identifier(message.taskId);
+        this.ownsTask(taskId);
         const peer: Peer = {
+          expiresAt: (socket.deserializeAttachment() as Peer).expiresAt,
           taskId,
           generation: crypto.randomUUID(),
           syncing: true,

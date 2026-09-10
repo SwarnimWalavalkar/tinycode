@@ -22,12 +22,14 @@
     "bindings": [
       { "name": "AGENTS", "class_name": "DurablePiAgent" },
       { "name": "SANDBOX", "class_name": "Sandbox" },
-      { "name": "DIRECTORY", "class_name": "TaskDirectory" }
+      { "name": "DIRECTORY", "class_name": "TaskDirectory" },
+      { "name": "ACCOUNTS", "class_name": "Accounts" }
     ]
   },
   "migrations": [
     { "tag": "v1", "new_sqlite_classes": ["DurablePiAgent", "Sandbox"] },
-    { "tag": "v2", "new_sqlite_classes": ["TaskDirectory"] }
+    { "tag": "v2", "new_sqlite_classes": ["TaskDirectory"] },
+    { "tag": "v3", "new_sqlite_classes": ["Accounts"] }
   ],
   "containers": [
     {
