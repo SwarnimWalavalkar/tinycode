@@ -53,7 +53,7 @@ gh pr create --title "Implement change" --body "Description and validation"
 that user's name and GitHub noreply email. Common GitHub SSH remote forms are
 rewritten to HTTPS automatically. Branch protections and organization OAuth/SSO
 policies still apply. Basic clone/fetch/push and GitHub repository/PR APIs are the
-supported paths; private Git LFS downloads and GitHub Enterprise hosts are not
+supported paths; private archive downloads, release-asset uploads, Git LFS downloads, and GitHub Enterprise hosts are not
 implemented in this iteration.
 
 The sandbox receives only a placeholder `GH_TOKEN`, never the real token. Trusted

@@ -22,6 +22,12 @@ describe("sandbox GitHub API policy", () => {
         expect(await api(`/repos/org/repo/${path}`, method)).toBe(false);
     }
   });
+  it("denies writes on read-only routes and unsupported query roots", async () => {
+    for (const [path, method] of [["contents/README.md", "PUT"], ["contents/README.md", "DELETE"], ["git/refs", "POST"], ["git/refs/heads/main", "PATCH"]])
+      expect(await api(`/repos/org/repo/${path}`, method)).toBe(false);
+    expect(await api("/graphql", "POST", "query { enterprise(slug: \"example\") { id } }")).toBe(false);
+    expect(await api("/graphql", "POST", "query { ...Read } fragment Read on Query { viewer { login } }")).toBe(true);
+  });
   it("supports merge, review, comment and Git read workflows", async () => {
     for (const [method, suffix] of [
       ["PUT", "pulls/3/merge"], ["POST", "pulls/3/reviews"],

@@ -1,5 +1,7 @@
 import { Kind, parse, type SelectionSetNode } from "graphql";
 
+const queries = new Set(["viewer", "repository", "repositoryOwner", "user", "organization", "search", "node", "nodes", "rateLimit"]);
+
 const mutations = new Set([
   "createPullRequest",
   "updatePullRequest",
@@ -37,18 +39,19 @@ export async function githubApiAllowed(request: Request): Promise<boolean> {
       );
       function allowed(
         set: SelectionSetNode,
+        fields: Set<string>,
         seen = new Set<string>(),
       ): boolean {
         return set.selections.every((s) => {
-          if (s.kind === Kind.FIELD) return mutations.has(s.name.value);
+          if (s.kind === Kind.FIELD) return fields.has(s.name.value);
           if (s.kind === Kind.INLINE_FRAGMENT)
-            return allowed(s.selectionSet, seen);
+            return allowed(s.selectionSet, fields, seen);
           const name = s.name.value;
           const fragment = fragments.get(name);
           return (
             !!fragment &&
             !seen.has(name) &&
-            allowed(fragment.selectionSet, new Set([...seen, name]))
+            allowed(fragment.selectionSet, fields, new Set([...seen, name]))
           );
         });
       }
@@ -59,8 +62,8 @@ export async function githubApiAllowed(request: Request): Promise<boolean> {
         operations.length > 0 &&
         operations.every(
           (op) =>
-            op.operation === "query" ||
-            (op.operation === "mutation" && allowed(op.selectionSet)),
+            (op.operation === "query" && allowed(op.selectionSet, queries)) ||
+            (op.operation === "mutation" && allowed(op.selectionSet, mutations)),
         )
       );
     } catch {
