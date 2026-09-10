@@ -39,9 +39,18 @@ assert.equal(target.searchParams.get("scope"), "repo workflow offline_access");
 assert.match(start.headers.get("set-cookie"), /HttpOnly; Secure; SameSite=Lax/);
 const state = target.searchParams.get("state");
 // Never follow the GitHub redirect or submit a valid callback in this smoke test.
-const mismatch = await get(
+const missingCookie = await get(
   `/api/auth/github/callback?state=${state}&code=fake-code`,
 );
+assert.equal(missingCookie.status, 303);
+assert.equal(missingCookie.headers.get("location"), "/?login_error=github");
+const oauthCookie = start.headers.get("set-cookie")?.split(";", 1)[0];
+assert.ok(state);
+assert.ok(oauthCookie);
+const wrongState = (state[0] === "a" ? "b" : "a") + state.slice(1);
+const mismatch = await get(`/api/auth/github/callback?state=${wrongState}&code=fake-code`, {
+  headers: { cookie: oauthCookie },
+});
 assert.equal(mismatch.status, 303);
 assert.equal(mismatch.headers.get("location"), "/?login_error=github");
 const denied = await get("/api/logout", {
