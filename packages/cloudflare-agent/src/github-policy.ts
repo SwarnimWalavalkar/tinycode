@@ -57,11 +57,12 @@ export async function githubApiAllowed(request: Request): Promise<boolean> {
           if (!fragment || seen.has(name)) return false;
           let cache = memo.get(fields);
           if (!cache) { cache = new Map(); memo.set(fields, cache); }
-          if (cache.has(name)) return cache.get(name)!;
+          const cacheKey = `${depth}:${name}`;
+          if (cache.has(cacheKey)) return cache.get(cacheKey)!;
           seen.add(name);
           const result = allowed(fragment.selectionSet, fields, seen, depth + 1);
           seen.delete(name);
-          cache.set(name, result);
+          cache.set(cacheKey, result);
           return result;
         });
       }

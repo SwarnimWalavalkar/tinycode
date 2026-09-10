@@ -25,6 +25,10 @@ describe("sandbox GitHub API policy", () => {
   it("memoizes repeated fragments and bounds deep traversal", async () => {
     const fragments = Array.from({ length: 30 }, (_, i) => `fragment F${i} on Query { ${i === 29 ? "viewer { login }" : `...F${i + 1} ...F${i + 1}`} }`).join(" ");
     expect(await api("/graphql", "POST", `query { ...F0 } ${fragments}`)).toBe(true);
+    const prefix = Array.from({length: 128}, (_, i) => `fragment P${i} on Query { ${i === 127 ? "...Terminal" : `...P${i + 1}`} }`).join(" ");
+    for (const roots of ["...Terminal ...P0", "...P0 ...Terminal"]) {
+      expect(await api("/graphql", "POST", `query { ${roots} } ${prefix} fragment Terminal on Query { viewer { login } }`)).toBe(false);
+    }
     const deep = Array.from({length: 200}, (_, i) => `fragment D${i} on Query { ${i === 199 ? "viewer { login }" : `...D${i + 1}`} }`).join(" ");
     expect(await api("/graphql", "POST", `query { ...D0 } ${deep}`)).toBe(false);
   });
