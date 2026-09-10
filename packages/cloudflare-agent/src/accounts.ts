@@ -174,7 +174,10 @@ export class Accounts extends DurableObject<Env> {
         signal: AbortSignal.timeout(15_000),
       },
     );
-    const data = await response.json().catch(() => ({})) as Record<string, unknown>;
+    const value: unknown = await response.json().catch(() => null);
+    if (!value || typeof value !== "object" || Array.isArray(value))
+      throw new HttpError(502, "Invalid GitHub authorization response; try again");
+    const data = value as Record<string, unknown>;
     if (["invalid_grant", "bad_refresh_token", "expired_token", "bad_verification_code"].includes(String(data.error)))
       throw new HttpError(401, "Reconnect GitHub to continue");
     if (!response.ok || data.error)

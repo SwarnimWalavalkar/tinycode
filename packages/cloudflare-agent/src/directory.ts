@@ -309,6 +309,7 @@ export class TaskDirectory extends DurableObject<Env> {
         let id = requestId;
         if (this.owner() !== LEGACY_OWNER) {
           // Caller IDs are idempotency keys, never globally addressable actor IDs.
+          // Retain mappings after deletion: a late create retry must not resurrect a task.
           this.ctx.storage.sql.exec("INSERT OR IGNORE INTO task_creation_requests VALUES (?,?)", requestId, crypto.randomUUID());
           id = this.ctx.storage.sql.exec<{ task_id: string }>("SELECT task_id FROM task_creation_requests WHERE request_id=?", requestId).toArray()[0].task_id;
         }

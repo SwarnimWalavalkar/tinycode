@@ -19,11 +19,14 @@ export function useGithubAuth() {
           signal: controller.signal,
           cache: "no-store",
         });
-        if (!response.ok) throw new Error("Could not load sign-in settings. Check the server configuration and try again.");
+        if (!response.ok) {
+          const failure = await response.json().catch(() => null);
+          throw new Error(typeof failure?.error === "string" ? failure.error : "Could not load sign-in settings. Check the server configuration and try again.");
+        }
         const data = await response.json();
         if (data?.mode !== "github" && data?.mode !== "token") throw new Error("Invalid sign-in settings response.");
-        setError("");
         if (!controller.signal.aborted) {
+          setError("");
           const nextIdentity = data?.user?.id ?? null;
           if (identity !== undefined && identity !== nextIdentity) {
             location.assign(connection.url);

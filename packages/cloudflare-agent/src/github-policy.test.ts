@@ -22,6 +22,15 @@ describe("sandbox GitHub API policy", () => {
         expect(await api(`/repos/org/repo/${path}`, method)).toBe(false);
     }
   });
+  it("supports merge, review, comment and Git read workflows", async () => {
+    for (const [method, suffix] of [
+      ["PUT", "pulls/3/merge"], ["POST", "pulls/3/reviews"],
+      ["POST", "pulls/3/comments"], ["PATCH", "pulls/comments/4"],
+      ["POST", "issues/3/comments"], ["DELETE", "issues/comments/4"],
+      ["GET", "branches/main"], ["GET", "commits/main"],
+      ["GET", "contents/README.md"], ["GET", "git/refs/heads/main"],
+    ]) expect(await api(`/repos/org/repo/${suffix}`, method)).toBe(true);
+  });
   it("supports repository discovery and PR operations", async () => {
     expect(await api("/repos/org/repo", "GET")).toBe(true);
     expect(await api("/repos/org/repo/pulls")).toBe(true);

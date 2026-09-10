@@ -24,6 +24,7 @@ async function deadline<T>(operation: Promise<T>, ms: number): Promise<T> {
 }
 
 export class CloudflareSandboxVm implements VmRuntime {
+  // Commit identity is a snapshot for this adapter; credentials are checked on every request.
   private githubIdentity?: { owner: string; name: string; email: string };
   private stopActive: ((reason: Error) => Promise<void>) | undefined;
 
