@@ -40,7 +40,7 @@ export default function OpenCodeGoDialog({ onClose, onSaved }: {
     } finally { if (alive.current) setBusy(false); }
   }
   return (
-    <Dialog title="OpenCode Go" onClose={onClose}>
+    <Dialog title="OpenCode Go" onClose={onClose} busy={busy}>
       <form className="connection-form" onSubmit={(event) => { event.preventDefault(); void save("PUT"); }}>
         <p>Use your OpenCode Go subscription for your durable tasks.</p>
         <p><a href="https://opencode.ai/auth" target="_blank" rel="noreferrer">Get your API key from OpenCode ↗</a></p>
@@ -57,7 +57,7 @@ export default function OpenCodeGoDialog({ onClose, onSaved }: {
         {error && <p className="form-error" role="alert">{error}</p>}
         <div className="dialog-actions">
           {status?.connected && <button type="button" className="button" disabled={busy} onClick={() => void save("DELETE")}>Disconnect</button>}
-          <button type="button" className="button" onClick={onClose}>Cancel</button>
+          <button type="button" className="button" disabled={busy} onClick={onClose}>Cancel</button>
           {status?.enabled && <button className="button primary" disabled={busy || !apiKey.trim()}>
             {busy && <LoaderCircle size={14} className="spin" />}{busy ? "Saving…" : status.connected ? "Update key" : "Save and use OpenCode Go"}
           </button>}

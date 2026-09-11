@@ -48,7 +48,7 @@ export function providers(env: Env, goConnected = false): ProviderInfo[] {
       id: "cloudflare",
       name: "Durable Agent",
       command: "",
-      canManageGoKey: true,
+      canManageGoKey: (env.TINYCODE_AUTH_SECRET?.length ?? 0) >= 32,
       available: available || goConnected,
       readiness: available || goConnected ? "ready" : "unauthenticated",
       capabilities: {

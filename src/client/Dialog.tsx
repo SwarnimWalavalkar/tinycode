@@ -6,11 +6,13 @@ export default function Dialog({
   children,
   onClose,
   className = "",
+  busy = false,
 }: {
   title: string;
   children: ReactNode;
   onClose: () => void;
   className?: string;
+  busy?: boolean;
 }) {
   const ref = useRef<HTMLDialogElement>(null);
   const titleId = useId();
@@ -22,14 +24,14 @@ export default function Dialog({
       ref={ref}
       className={`dialog ${className}`}
       aria-labelledby={titleId}
-      onCancel={onClose}
+      onCancel={(event) => { event.preventDefault(); if (!busy) onClose(); }}
       onClick={(e) => {
-        if (e.target === ref.current) onClose();
+        if (!busy && e.target === ref.current) onClose();
       }}
     >
       <div className="dialog-heading">
         <h2 id={titleId}>{title}</h2>
-        <button className="icon-button" aria-label="Close dialog" onClick={onClose}>
+        <button className="icon-button" aria-label="Close dialog" disabled={busy} onClick={onClose}>
           <X size={18} />
         </button>
       </div>

@@ -28,6 +28,8 @@ describe("OpenCode Go inference", () => {
     // Legacy Qwen3.5 inherits the OpenAI-compatible default in models.dev.
     const messages = ["minimax-m3", "minimax-m2.7", "minimax-m2.5", "qwen3.8-max", "qwen3.8-flash", "qwen3.7-max", "qwen3.7-plus", "qwen3.6-plus"];
     const responses = ["gpt-5.6-luna", "grok-4.5", "grok-4.6", "muse-spark-1.3-contributor", "muse-spark-1.2-contributor"];
+    const completions = ["glm-5.3-flash", "glm-5.3", "glm-5.2", "glm-5.1", "glm-5", "deepseek-v4-flash", "deepseek-v4-flash-vision-exp", "deepseek-v4-pro", "deepseek-v4.1-flash", "deepseek-flash", "hy3", "hy3-preview", "hy4-preview", "kimi-k2.5", "kimi-k2.6", "kimi-k2.7-code", "kimi-k3", "longcat-2.0", "mimo-v2-omni", "mimo-v2-pro", "mimo-v2.5", "mimo-v2.5-pro", "omen-alpha", "qwen3.5-plus"];
+    expect([...messages, ...responses, ...completions].sort(), "Update the independent endpoint contract when the Go catalog changes").toEqual(GO_MODELS.map((m) => m.id.slice("opencode-go/".length)).sort());
     const id = definition.id.slice("opencode-go/".length);
     const endpoint = messages.includes(id) ? "messages" : responses.includes(id) ? "responses" : "chat/completions";
     expect(calls[0].url).toBe(`${GO_BASE_URL}/${endpoint}`);
