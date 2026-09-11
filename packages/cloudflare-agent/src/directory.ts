@@ -1,3 +1,4 @@
+import { accountStore } from "./accounts.js";
 import { DurableObject } from "cloudflare:workers";
 import type {
   ImageAttachment,
@@ -34,10 +35,10 @@ type ImageRecord = ImageAttachment & {
   deleted?: boolean;
 };
 
-export function providers(env: Env): ProviderInfo[] {
+export function providers(env: Env, goConnected = false): ProviderInfo[] {
   let available = false;
   try {
-    available = !!gatewayCredential(env) && modelCatalog(env).models.length > 0;
+    available = goConnected || !!gatewayCredential(env) && modelCatalog(env).models.length > 0;
   } catch (error) {
     console.error("Cloudflare provider configuration is invalid:", error);
   }
@@ -46,8 +47,8 @@ export function providers(env: Env): ProviderInfo[] {
       id: "cloudflare",
       name: "Durable Agent",
       command: "",
-      available,
-      readiness: available ? "ready" : "unauthenticated",
+      available: available || goConnected,
+      readiness: available || goConnected ? "ready" : "unauthenticated",
       capabilities: {
         resume: true,
         steer: true,
@@ -90,12 +91,14 @@ export class TaskDirectory extends DurableObject<Env> {
       .toArray()
       .map((r) => JSON.parse(r.value));
   }
-  private bootstrap(): ServerPacket {
+  private async bootstrap(): Promise<ServerPacket> {
+    const goConnected = (this.env.TINYCODE_AUTH_SECRET?.length ?? 0) >= 32 &&
+      (await accountStore(this.env).goStatus(this.owner())).connected;
     return {
       type: "bootstrap",
       projects: [],
       tasks: this.tasks(),
-      providers: providers(this.env),
+      providers: providers(this.env, goConnected),
     };
   }
   private send(socket: WebSocket, packet: ServerPacket) {
@@ -240,7 +243,7 @@ export class TaskDirectory extends DurableObject<Env> {
           syncing: false,
           expiresAt: Number(request.headers.get("x-tinycode-session-expires")) || undefined,
         } satisfies Peer);
-        this.send(pair[1], this.bootstrap());
+        this.send(pair[1], await this.bootstrap());
         return new Response(null, {
           status: 101,
           webSocket: pair[0],
@@ -249,7 +252,7 @@ export class TaskDirectory extends DurableObject<Env> {
       }
       const image = url.pathname.match(/^\/images\/([A-Za-z0-9_-]+)$/);
       if (image) return await this.imageRequest(request, image[1]);
-      if (url.pathname === "/bootstrap") return json(this.bootstrap());
+      if (url.pathname === "/bootstrap") return json(await this.bootstrap());
       if (url.pathname === "/tasks" && request.method === "GET")
         return json(this.tasks());
       const input = await body(

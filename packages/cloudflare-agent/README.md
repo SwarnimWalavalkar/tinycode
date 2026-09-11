@@ -1,5 +1,27 @@
 # Tinycode on Cloudflare
 
+## OpenCode Go
+
+In the durable agent's model picker, choose **Connect OpenCode Go**, paste an API
+key from the [OpenCode console](https://opencode.ai/auth), and save. New tasks select
+GLM 5.3 Flash; GLM 5.3 and DeepSeek V4 Flash are also available. Existing tasks keep
+their model until you change it in the picker. **Manage OpenCode Go** lets you replace
+or disconnect the key. Saving stores the key; the first inference request verifies
+that OpenCode accepts it and that subscription usage is available.
+
+This uses the existing GitHub account and `TINYCODE_AUTH_SECRET` configuration below.
+Keys are AES-GCM encrypted with account-and-provider binding in the Accounts DO.
+Only connection status reaches the browser; keys never enter task history or sandbox
+environment variables. Each model call loads the owner's current key, so replacing
+or disconnecting it applies to subsequent calls, including resumed tasks. Requests
+already sent can finish. Title generation uses the task's Go model and account too.
+
+Calls go directly to `https://opencode.ai/zen/go/v1/chat/completions` with Tinycode's
+own user-agent and a stable task session header. There is no automatic switch to
+Cloudflare or another paid provider when Go rejects a request. OpenCode's own
+**Use balance** setting can charge the user's Zen balance after subscription limits;
+users manage that in their OpenCode console. See the [Go documentation](https://opencode.ai/docs/go/).
+
 ## GitHub sign-in and repository access
 
 Configure one **GitHub OAuth App** for this deployment (not a GitHub App installation):

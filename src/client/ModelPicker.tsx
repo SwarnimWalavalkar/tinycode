@@ -4,6 +4,7 @@ import type { ModelCatalog, ProviderId, ProviderInfo } from "../shared/contracts
 import { modelLabel } from "../shared/models";
 import { api, setShell, useShell } from "./state";
 import { ProviderMark, providerNames } from "./Harness";
+import OpenCodeGoDialog from "./OpenCodeGoDialog";
 import ThinkingPicker from "./ThinkingPicker";
 import PermissionsPicker from "./PermissionsPicker";
 import type { PermissionMode } from "../shared/permissions";
@@ -34,6 +35,9 @@ export default function ModelPicker({
   onPermissionsChange: (mode: PermissionMode) => void | Promise<void>;
 }) {
   const { providers } = useShell();
+  const [goOpen, setGoOpen] = useState(false);
+  const [catalogRevision, setCatalogRevision] = useState(0);
+  const [goDefault, setGoDefault] = useState(false);
   const [open, setOpen] = useState(false);
   const [search, setSearch] = useState("");
   const [retry, setRetry] = useState(0);
@@ -48,7 +52,7 @@ export default function ModelPicker({
   const root = useRef<HTMLDivElement>(null);
   const trigger = useRef<HTMLButtonElement>(null);
   const searchInput = useRef<HTMLInputElement>(null);
-  const key = JSON.stringify([provider, projectId, taskId, retry]);
+  const key = JSON.stringify([provider, projectId, taskId, retry, catalogRevision]);
   const catalog = result?.key === key ? result.catalog : undefined;
   const error = result?.key === key ? result.error : undefined;
   const available = providers.find((p) => p.id === provider)?.available;
@@ -74,8 +78,13 @@ export default function ModelPicker({
     return () => abort.abort();
   }, [key, provider, projectId, taskId, available]);
   useEffect(() => {
+    if (!taskId && goDefault && catalog?.defaultModel) {
+      setGoDefault(false);
+      void onChange(provider, catalog.defaultModel);
+      return;
+    }
     if (!taskId && !model && catalog?.defaultModel) void onChange(provider, catalog.defaultModel);
-  }, [catalog, model, provider, taskId, onChange]);
+  }, [catalog, model, provider, taskId, onChange, goDefault]);
   useEffect(() => {
     if (!open) return;
     // Refresh native auth in the background; a slow harness must not delay typing or sending.
@@ -143,6 +152,14 @@ export default function ModelPicker({
   }
   return (
     <div className="composer-settings">
+      {goOpen && <OpenCodeGoDialog onClose={() => setGoOpen(false)} onSaved={(selectDefault) => {
+        setGoOpen(false);
+        setGoDefault(selectDefault && !taskId);
+        setCatalogRevision((n) => n + 1);
+        void api<ProviderInfo[]>("/providers").then((providers) => setShell({ providers })).catch(() => {});
+        setOpen(true);
+      }} />}
+
       <div className="model-picker" ref={root}>
         <button
           ref={trigger}
@@ -305,7 +322,7 @@ export default function ModelPicker({
                   >
                     <span>
                       {m.label}
-                      {provider === "pi" && <small>{m.description}</small>}
+                      {(provider === "pi" || provider === "cloudflare") && <small>{m.description}</small>}
                     </span>
                     {(m.id === model || m.id === selectedId || m.resolvedId === selectedId) && (
                       <Check size={14} />
@@ -330,6 +347,9 @@ export default function ModelPicker({
                 {saveError}
               </p>
             )}
+            {provider === "cloudflare" && <button type="button" className="refresh-harnesses" onClick={() => { setOpen(false); setGoOpen(true); }}>
+              {catalog?.models.some((m) => m.id.startsWith("opencode-go/")) ? "Manage OpenCode Go" : "Connect OpenCode Go"}
+            </button>}
             <button
               type="button"
               className="refresh-harnesses"

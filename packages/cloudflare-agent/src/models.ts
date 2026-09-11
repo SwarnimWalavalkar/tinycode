@@ -7,6 +7,7 @@ import type { ModelCatalog } from "../../../src/shared/contracts.js";
 import type { Env } from "./env.js";
 
 import { gatewayCredential, gatewayModel, modelDefinition } from "./gateway.js";
+import { GO_MODELS, GO_DEFAULT, goModel, goFetch, isGoModel } from "./opencode-go.js";
 import { workersAiFetch } from "./workers-ai.js";
 
 export function configuredModelIds(env: Env): string[] {
@@ -33,12 +34,17 @@ export function defaultModelId(env: Env): string {
 }
 
 export function resolveModel(env: Env, id: string) {
+  if (isGoModel(id)) return { model: goModel(id) };
   if (!configuredModelIds(env).includes(id)) throw new Error("Model is not enabled for this agent");
   return { model: gatewayModel(env, id) };
 }
 
-export function modelCatalog(env: Env): ModelCatalog {
-  const available = configuredModelIds(env).map((id) => {
+export function modelCatalog(env: Env, goConnected = false): ModelCatalog {
+  let ids = configuredModelIds(env);
+  if (goConnected) {
+    try { gatewayCredential(env); } catch { ids = []; }
+  }
+  const available: ModelCatalog["models"] = ids.map((id) => {
     const model = modelDefinition(env, id);
     return {
       id,
@@ -50,7 +56,10 @@ export function modelCatalog(env: Env): ModelCatalog {
         : (model.thinkingLevels[0] ?? null),
     };
   });
-  const preferred = defaultModelId(env);
+  if (goConnected) available.unshift(...GO_MODELS.map((model) => ({
+    id: model.id, label: model.name, description: "OpenCode Go · Your subscription", thinkingLevels: [] as string[], defaultThinkingLevel: null,
+  })));
+  const preferred = goConnected ? GO_DEFAULT : defaultModelId(env);
   return {
     models: available,
     defaultModel: available.some((model) => model.id === preferred)
@@ -64,7 +73,8 @@ export function normalizeThinkingLevel(
   modelId: string,
   value?: string | null,
 ): ThinkingLevel {
-  const levels = modelDefinition(env, modelId).thinkingLevels;
+  if (isGoModel(modelId)) goModel(modelId);
+  const levels = isGoModel(modelId) ? [] : modelDefinition(env, modelId).thinkingLevels;
   if (!levels.length) {
     if (value != null && value !== "off")
       throw new Error("This gateway model has no configurable thinking levels");
@@ -79,6 +89,7 @@ export function createPiAgent(
   env: Env,
   input: {
     sessionId: string;
+    getGoKey?: () => Promise<string>;
     modelId: string;
     systemPrompt: string;
     thinkingLevel?: string | null;
@@ -86,12 +97,18 @@ export function createPiAgent(
     tools?: AgentTool<any>[];
   },
 ) {
-  const credential = gatewayCredential(env);
+  const go = isGoModel(input.modelId);
+  const credential = go ? undefined : gatewayCredential(env);
+  const getCredential = async () => {
+    if (!go) return credential!;
+    if (!input.getGoKey) throw new Error("Connect OpenCode Go in the model picker to continue");
+    return input.getGoKey();
+  };
   const { model } = resolveModel(env, input.modelId);
   const thinking = normalizeThinkingLevel(env, input.modelId, input.thinkingLevel);
   return new Agent({
     sessionId: input.sessionId,
-    getApiKey: async () => credential,
+    getApiKey: getCredential,
     streamFn: (_model, context, options) => {
       if (
         !model.input.includes("image") &&
@@ -105,9 +122,10 @@ export function createPiAgent(
         );
       const settings = {
         ...options,
-        apiKey: credential,
+        apiKey: go ? options?.apiKey : credential,
+        ...(go ? { fetch: goFetch, maxRetries: 0 } : {}),
         ...(model.id.startsWith("@cf/") ? { fetch: workersAiFetch } : {}),
-        headers: { ...options?.headers, ...model.headers },
+        headers: { ...options?.headers, ...model.headers, ...(go ? { "user-agent": "tinycode/0.1", "x-opencode-session": input.sessionId } : {}) },
         onPayload: async (payload: unknown) => {
           const next = (await options?.onPayload?.(payload, model)) ?? payload;
           // Workers AI's GPT OSS Gateway adapter rejects null assistant content

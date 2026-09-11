@@ -162,7 +162,19 @@ export default {
             );
           return new Request(new Request(target, source), { headers });
         };
-        if (
+        const goConnected = async () => (env.TINYCODE_AUTH_SECRET?.length ?? 0) >= 32 && (await accountStore(env).goStatus(owner)).connected;
+        if (url.pathname === "/api/inference/opencode-go") {
+          // Same-origin writes also protect legacy cookie authentication.
+          if (request.method !== "GET" && request.headers.get("origin") !== url.origin)
+            throw new HttpError(403, "Use the Tinycode website to update your inference key");
+          if (request.method === "PUT") {
+            const input = await body(request, 8192);
+            await accountStore(env).saveGoKey(owner, text(input.apiKey, 4096));
+          } else if (request.method === "DELETE") {
+            await accountStore(env).disconnectGo(owner);
+          } else if (request.method !== "GET") throw new HttpError(405, "Method not allowed");
+          response = json(await accountStore(env).goStatus(owner));
+        } else if (
           github &&
           url.pathname === "/api/logout" &&
           request.method === "POST"
@@ -181,17 +193,17 @@ export default {
         } else if (url.pathname === "/api/health")
           response = json({
             ok: true,
-            ready: providers(env)[0].available,
+            ready: providers(env, await goConnected())[0].available,
             version: "0.2.0",
             protocol: CLOUDFLARE_AGENT_PROTOCOL,
             authority: "cloud",
           });
         else if (url.pathname === "/api/providers")
-          response = json(providers(env));
+          response = json(providers(env, await goConnected()));
         else if (url.pathname === "/api/models")
-          response = json(modelCatalog(env));
+          response = json(modelCatalog(env, await goConnected()));
         else if (url.pathname === "/api/thinking") {
-          const model = modelCatalog(env).models.find(
+          const model = modelCatalog(env, await goConnected()).models.find(
             (m) => m.id === url.searchParams.get("model"),
           );
           response = json({

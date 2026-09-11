@@ -82,6 +82,7 @@ export class Accounts extends DurableObject<Env> {
   constructor(ctx: DurableObjectState, env: Env) {
     super(ctx, env);
     ctx.storage.sql.exec(`
+      CREATE TABLE IF NOT EXISTS inference_credentials (owner TEXT PRIMARY KEY, credential TEXT NOT NULL);
       CREATE TABLE IF NOT EXISTS users (id TEXT PRIMARY KEY, profile TEXT NOT NULL, credential TEXT);
       CREATE TABLE IF NOT EXISTS sessions (hash TEXT PRIMARY KEY, owner TEXT NOT NULL, expires INTEGER NOT NULL);
       CREATE TABLE IF NOT EXISTS oauth (state TEXT PRIMARY KEY, verifier TEXT NOT NULL, redirect TEXT NOT NULL, expires INTEGER NOT NULL);
@@ -98,7 +99,8 @@ export class Accounts extends DurableObject<Env> {
     return `${encode(iv)}.${encode(new Uint8Array(encrypted))}`;
   }
   private async key() {
-    assertGithubConfig(this.env);
+    if ((this.env.TINYCODE_AUTH_SECRET?.length ?? 0) < 32)
+      throw new HttpError(503, "Configure TINYCODE_AUTH_SECRET to store inference keys");
     return crypto.subtle.importKey(
       "raw",
       await crypto.subtle.digest(
@@ -125,6 +127,26 @@ export class Accounts extends DurableObject<Env> {
         ),
       ),
     );
+  }
+  async goStatus(owner: string) {
+    return { enabled: (this.env.TINYCODE_AUTH_SECRET?.length ?? 0) >= 32,
+      connected: !!this.ctx.storage.sql.exec("SELECT owner FROM inference_credentials WHERE owner=?", ownerId(owner)).toArray().length };
+  }
+  async saveGoKey(owner: string, value: string) {
+    ownerId(owner);
+    const access = value.trim();
+    if (!access || access.length > 4096 || /[\s\x00-\x1f\x7f]/.test(access))
+      throw new HttpError(400, "Enter a valid OpenCode Go API key");
+    const sealed = await this.seal({ access }, `opencode-go:${owner}`);
+    this.ctx.storage.sql.exec("INSERT INTO inference_credentials VALUES (?,?) ON CONFLICT(owner) DO UPDATE SET credential=excluded.credential", owner, sealed);
+  }
+  async disconnectGo(owner: string) {
+    this.ctx.storage.sql.exec("DELETE FROM inference_credentials WHERE owner=?", ownerId(owner));
+  }
+  async goKey(owner: string): Promise<string> {
+    const row = this.ctx.storage.sql.exec<{ credential: string }>("SELECT credential FROM inference_credentials WHERE owner=?", ownerId(owner)).toArray()[0];
+    if (!row) throw new HttpError(409, "Connect OpenCode Go in the model picker to continue");
+    return (await this.unseal(row.credential, `opencode-go:${owner}`)).access;
   }
   async begin(redirectUri: string) {
     assertGithubConfig(this.env);

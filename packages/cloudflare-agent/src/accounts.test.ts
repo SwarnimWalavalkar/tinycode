@@ -514,3 +514,43 @@ describe("account isolation through the Worker and directory", () => {
     ).toBe(200);
   });
 });
+
+
+describe("OpenCode Go account connection", () => {
+  it("isolates encrypted keys by authenticated owner and never returns them over HTTP", async () => {
+    const { env, accounts, ctx } = fixture();
+    const one = await signIn(accounts, 1);
+    const two = await signIn(accounts, 2);
+    const path = "/api/inference/opencode-go";
+    expect((await worker.fetch(request(path), env)).status).toBe(401);
+    const saved = await worker.fetch(request(path, one.token, "PUT", { apiKey: "key-one", owner: "github-2" }), env);
+    expect(await saved.json()).toEqual({ enabled: true, connected: true });
+    expect(await (await worker.fetch(request(path, two.token), env)).json()).toEqual({ enabled: true, connected: false });
+    expect(await accounts.goKey("github-1")).toBe("key-one");
+    await expect(accounts.goKey("github-2")).rejects.toThrow("Connect OpenCode Go");
+    const row = ctx.storage.sql.exec<{credential: string}>("SELECT credential FROM inference_credentials").toArray()[0];
+    expect(row.credential).not.toContain("key-one");
+    const catalog = await (await worker.fetch(request("/api/models", one.token), env)).json() as any;
+    expect(catalog.defaultModel).toBe("opencode-go/glm-5.3-flash");
+    expect(JSON.stringify(catalog)).not.toContain("key-one");
+    const bootstrap = await (await worker.fetch(request("/api/bootstrap", one.token), env)).json() as any;
+    expect(bootstrap.providers[0].available).toBe(true);
+    await worker.fetch(request(path, two.token, "DELETE"), env);
+    expect(await accounts.goKey("github-1")).toBe("key-one");
+    await worker.fetch(request(path, one.token, "PUT", { apiKey: "replacement" }), env);
+    expect(await accounts.goKey("github-1")).toBe("replacement");
+    await worker.fetch(request(path, one.token, "DELETE"), env);
+    await expect(accounts.goKey("github-1")).rejects.toThrow("Connect OpenCode Go");
+  });
+  it("rejects cross-origin writes and invalid keys without changing the saved connection", async () => {
+    const { env, accounts } = fixture();
+    const one = await signIn(accounts);
+    await accounts.saveGoKey("github-1", "original");
+    const path = "/api/inference/opencode-go";
+    expect((await worker.fetch(request(path, one.token, "PUT", { apiKey: "evil" }, { origin: "https://evil.test" }), env)).status).toBe(403);
+    for (const apiKey of ["", "  ", "a\nb", "x".repeat(4097)]) {
+      expect((await worker.fetch(request(path, one.token, "PUT", { apiKey }), env)).status).toBe(400);
+    }
+    expect(await accounts.goKey("github-1")).toBe("original");
+  });
+});
