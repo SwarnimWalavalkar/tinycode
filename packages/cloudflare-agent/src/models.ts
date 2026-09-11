@@ -2,6 +2,7 @@ import type { AgentMessage, AgentTool, ThinkingLevel } from "@earendil-works/pi-
 import { Agent } from "@earendil-works/pi-agent-core";
 import type { Model } from "@earendil-works/pi-ai";
 import { streamSimple as responses } from "@earendil-works/pi-ai/api/openai-responses";
+import { streamSimple as anthropic } from "@earendil-works/pi-ai/api/anthropic-messages";
 import { streamSimple as completions } from "@earendil-works/pi-ai/api/openai-completions";
 import type { ModelCatalog } from "../../../src/shared/contracts.js";
 import type { Env } from "./env.js";
@@ -118,7 +119,7 @@ export function createPiAgent(
         )
       )
         throw new Error(
-          "This gateway model does not support image inputs; choose an image-capable model",
+          "This model does not support image inputs; choose an image-capable model",
         );
       const settings = {
         ...options,
@@ -152,7 +153,9 @@ export function createPiAgent(
       };
       return model.api === "openai-responses"
         ? responses(model as Model<"openai-responses">, context, settings)
-        : completions(model as Model<"openai-completions">, context, settings);
+        : model.api === "anthropic-messages"
+          ? anthropic(model as Model<"anthropic-messages">, context, settings)
+          : completions(model as Model<"openai-completions">, context, settings);
     },
     toolExecution: "parallel",
     initialState: {

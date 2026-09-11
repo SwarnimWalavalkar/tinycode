@@ -2243,7 +2243,7 @@
     overflow-y: auto;
     padding: 5px;
   }
-  .model-options > button {
+  .model-options [role="menuitemradio"] {
     display: flex;
     width: 100%;
     min-height: 36px;
@@ -2253,16 +2253,16 @@
     border-radius: 6px;
     text-align: left;
   }
-  .model-options > button > span {
+  .model-options [role="menuitemradio"] > span {
     overflow: hidden;
     text-overflow: ellipsis;
   }
-  .model-options > button:hover,
-  .model-options > button:focus-visible {
+  .model-options [role="menuitemradio"]:hover,
+  .model-options [role="menuitemradio"]:focus-visible {
     background: var(--field);
     outline-offset: -2px;
   }
-  .model-options > button[aria-checked="true"] {
+  .model-options [role="menuitemradio"][aria-checked="true"] {
     background: var(--field);
   }
   .model-options small {
@@ -2270,6 +2270,35 @@
     font-size: 10px;
     color: var(--muted);
     margin-top: 3px;
+  }
+  .go-source-icon { color: light-dark(#087b74, #72d8c8); }
+  .model-group + .model-group { margin-top: 6px; border-top: 1px solid var(--line); }
+  .model-group-heading {
+    position: sticky;
+    top: -5px;
+    z-index: 1;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 10px;
+    padding: 12px 10px 8px;
+    background: var(--surface);
+    font-size: 11px;
+    font-weight: 600;
+  }
+  .model-group-heading > span { display: flex; align-items: center; gap: 6px; }
+  .model-group-heading small { margin: 0; font-weight: 400; color: var(--quiet); }
+  .model-count { font-size: 10px; color: var(--muted); font-weight: 400; }
+  .model-group[data-source="go"] .model-group-heading > span { color: light-dark(#087b74, #72d8c8); }
+  .model-group[data-source="included"] .model-group-heading > span { color: light-dark(#a64e08, #ffae70); }
+  .model-group[data-source="go"] [aria-checked="true"] {
+    background: light-dark(#eaf6f2, #17332e);
+    color: light-dark(#096458, #8ae2cf);
+    box-shadow: inset 2px 0 currentColor;
+  }
+  .model-group[data-source="included"] [aria-checked="true"] {
+    background: light-dark(#fff1e5, #37291c);
+    box-shadow: inset 2px 0 light-dark(#b76017, #ffae70);
   }
   .model-message {
     display: flex;

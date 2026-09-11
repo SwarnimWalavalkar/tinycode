@@ -4,7 +4,8 @@
 
 In the durable agent's model picker, choose **Connect OpenCode Go**, paste an API
 key from the [OpenCode console](https://opencode.ai/auth), and save. New tasks select
-GLM 5.3 Flash; GLM 5.3 and DeepSeek V4 Flash are also available. Existing tasks keep
+GLM 5.3 Flash. The picker separates your Go subscription from models paid by Tinycode,
+and includes all 37 IDs in Go’s public catalog as of September 11, 2026. Existing tasks keep
 their model until you change it in the picker. **Manage OpenCode Go** lets you replace
 or disconnect the key. Saving stores the key; the first inference request verifies
 that OpenCode accepts it and that subscription usage is available.
@@ -16,7 +17,10 @@ environment variables. Each model call loads the owner's current key, so replaci
 or disconnecting it applies to subsequent calls, including resumed tasks. Requests
 already sent can finish. Title generation uses the task's Go model and account too.
 
-Calls go directly to `https://opencode.ai/zen/go/v1/chat/completions` with Tinycode's
+The local catalog in `src/opencode-go.ts` records model capabilities and the protocol
+required by each model. Refresh it against [Go’s model list](https://opencode.ai/zen/go/v1/models)
+and [endpoint documentation](https://opencode.ai/docs/go/#endpoints) when adding models.
+Calls go directly to Go’s Chat Completions, Responses, or Messages endpoint with Tinycode's
 own user-agent and a stable task session header. There is no automatic switch to
 Cloudflare or another paid provider when Go rejects a request. OpenCode's own
 **Use balance** setting can charge the user's Zen balance after subscription limits;

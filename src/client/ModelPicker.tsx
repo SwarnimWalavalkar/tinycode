@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from "react";
-import { Check, ChevronDown, LoaderCircle, RefreshCw, Search } from "lucide-react";
+import { Cloud, KeyRound, Check, ChevronDown, LoaderCircle, RefreshCw, Search } from "lucide-react";
 import type { ModelCatalog, ProviderId, ProviderInfo } from "../shared/contracts";
 import { modelLabel } from "../shared/models";
 import { api, setShell, useShell } from "./state";
@@ -120,6 +120,12 @@ export default function ModelPicker({
   const models = (catalog?.models ?? []).filter((m) =>
     `${m.label} ${m.id} ${m.description ?? ""}`.toLowerCase().includes(search.toLowerCase()),
   );
+  const selectedGo = provider === "cloudflare" && !!selectedId?.startsWith("opencode-go/");
+  const groups = provider === "cloudflare" ? [
+    { id: "included", label: "Workers AI", note: "", models: models.filter((m) => m.id.startsWith("@cf/")) },
+    { id: "hosted", label: "Tinycode models", note: "", models: models.filter((m) => !m.id.startsWith("@cf/") && !m.id.startsWith("opencode-go/")) },
+    { id: "go", label: "OpenCode Go", note: "Your subscription", models: models.filter((m) => m.id.startsWith("opencode-go/")) },
+  ] : [{ id: "native", label: "", note: "", models }];
   async function choose(id: string) {
     if (!available) return;
     setSaving(true);
@@ -188,10 +194,10 @@ export default function ModelPicker({
             <span>{checking ? "Checking harnesses…" : "Connect a harness"}</span>
           ) : (
             <>
-              <ProviderMark id={provider} />
-              <span className="model-harness">{providerNames[provider]}</span>
+              {selectedGo ? <KeyRound size={13} className="go-source-icon" /> : <ProviderMark id={provider} />}
+              <span className="model-harness">{provider === "cloudflare" ? (selectedGo ? "OpenCode Go" : selectedId?.startsWith("@cf/") ? "Workers AI" : "Tinycode") : providerNames[provider]}</span>
               <span className="model-separator">/</span>
-              <span className="model-value">{label}</span>
+              <span className="model-value">{label.replace(/ \(Workers AI\)$/, "")}</span>
             </>
           )}
           <ChevronDown size={12} />
@@ -242,7 +248,7 @@ export default function ModelPicker({
                 <input
                   ref={searchInput}
                   aria-label="Search models"
-                  placeholder="Search models or enter an ID"
+                  placeholder={provider === "cloudflare" ? "Search models…" : "Search models or enter an ID"}
                   value={search}
                   maxLength={200}
                   onChange={(e) => setSearch(e.target.value)}
@@ -253,7 +259,7 @@ export default function ModelPicker({
                         ?.querySelector<HTMLButtonElement>('[role="menuitemradio"]')
                         ?.focus();
                     }
-                    if (e.key === "Enter" && search.trim() && !models.length && !loading) {
+                    if (provider !== "cloudflare" && e.key === "Enter" && search.trim() && !models.length && !loading) {
                       e.preventDefault();
                       void choose(search.trim());
                     }
@@ -308,7 +314,13 @@ export default function ModelPicker({
                 </p>
               )}
               {available &&
-                models.map((m) => (
+                groups.filter((group) => group.models.length).map((group) => (
+                <div className="model-group" role="group" aria-label={group.label || "Models"} data-source={group.id} key={group.id}>
+                  {group.label && <div className="model-group-heading">
+                    <span>{group.id === "go" ? <KeyRound size={13} /> : <Cloud size={14} />}{group.label}<span className="model-count">{group.models.length}</span></span>
+                    {group.note && <small>{group.note}</small>}
+                  </div>}
+                  {group.models.map((m) => (
                   <button
                     type="button"
                     role="menuitemradio"
@@ -321,19 +333,21 @@ export default function ModelPicker({
                     onClick={() => void choose(m.id)}
                   >
                     <span>
-                      {m.label}
-                      {(provider === "pi" || provider === "cloudflare") && <small>{m.description}</small>}
+                      {m.label.replace(/ \(Workers AI\)$/, "")}
+                      {provider === "pi" && <small>{m.description}</small>}
+                      {m.id.includes("muse-spark") && <small>Uses prompts for training · Limited regions</small>}
                     </span>
                     {(m.id === model || m.id === selectedId || m.resolvedId === selectedId) && (
                       <Check size={14} />
                     )}
                   </button>
-                ))}
+                ))}</div>))}
               {catalog && !models.length && !search && (
-                <p className="model-message">No models available. Enter a model ID above.</p>
+                <p className="model-message">No models available. Refresh to try again.</p>
               )}
+              {provider === "cloudflare" && catalog && search.trim() && !models.length && <p className="model-message">No models match “{search}”.</p>}
             </div>
-            {available && search.trim() && !models.length && !loading && (
+            {available && provider !== "cloudflare" && search.trim() && !models.length && !loading && (
               <button
                 className="custom-model"
                 disabled={saving}
@@ -357,7 +371,7 @@ export default function ModelPicker({
               onClick={() => void refresh()}
             >
               <RefreshCw size={13} className={refreshing ? "spin" : ""} />
-              {refreshing ? "Checking…" : "Refresh harnesses"}
+              {refreshing ? "Checking…" : provider === "cloudflare" ? "Refresh models" : "Refresh harnesses"}
             </button>
           </div>
         )}
