@@ -564,8 +564,9 @@ export class DurablePiAgent extends DurableObject<Env> {
           createdBy,
           githubAccountId: ownerId(input.githubAccountId ?? createdBy),
         };
-        this.store.set("ownership", ownership);
-        const model = input.model ?? defaultModelId(this.env);
+        const goConnected = input.model == null && (this.env.TINYCODE_AUTH_SECRET?.length ?? 0) >= 32
+          && (await accountStore(this.env).goStatus(createdBy)).connected;
+        const model = input.model ?? modelCatalog(this.env, goConnected).defaultModel;
         resolveModel(this.env, model);
         if (isGoModel(model)) await accountStore(this.env).goKey(createdBy);
         const permissionMode = parsePermissionMode(
@@ -575,6 +576,7 @@ export class DurablePiAgent extends DurableObject<Env> {
         const now = new Date().toISOString();
         await this.arm();
         if (this.store.get("task")) return json(this.store.task());
+        this.store.set("ownership", ownership);
         this.store.set("task", {
           id,
           projectId: null,

@@ -517,6 +517,20 @@ describe("account isolation through the Worker and directory", () => {
 
 
 describe("OpenCode Go account connection", () => {
+  it("rejects disconnected Go task creation before allocating task records", async () => {
+    const { env, accounts, contexts, agentFetch } = fixture();
+    const one = await signIn(accounts);
+    const response = await worker.fetch(request("/api/tasks", one.token, "POST", {
+      provider: "cloudflare", requestId: "missing-go", model: "opencode-go/glm-5.3-flash",
+    }), env);
+    expect(response.status).toBe(409);
+    expect(agentFetch).not.toHaveBeenCalled();
+    for (const ctx of contexts.values()) {
+      expect(ctx.storage.sql.exec("SELECT * FROM tasks").toArray()).toEqual([]);
+      expect(ctx.storage.sql.exec("SELECT * FROM task_creation_requests").toArray()).toEqual([]);
+    }
+  });
+
   it("isolates encrypted keys by authenticated owner and never returns them over HTTP", async () => {
     const { env, accounts, ctx } = fixture();
     const one = await signIn(accounts, 1);

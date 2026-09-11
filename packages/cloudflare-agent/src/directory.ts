@@ -24,6 +24,7 @@ import {
   publicError,
 } from "./http.js";
 import { modelCatalog } from "./models.js";
+import { isGoModel } from "./opencode-go.js";
 import { gatewayCredential } from "./gateway.js";
 import type { CloudEvent } from "./task-store.js";
 
@@ -308,6 +309,8 @@ export class TaskDirectory extends DurableObject<Env> {
             400,
             "Choose a Cloudflare task with no local project",
           );
+        if (typeof input.model === "string" && isGoModel(input.model))
+          await accountStore(this.env).goKey(this.owner());
         const requestId = identifier(input.requestId ?? crypto.randomUUID());
         let id = requestId;
         if (this.owner() !== LEGACY_OWNER) {
