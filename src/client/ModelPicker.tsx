@@ -1,9 +1,10 @@
 import { useEffect, useRef, useState } from "react";
-import { Check, ChevronDown, LoaderCircle, RefreshCw, Search } from "lucide-react";
+import { Cloud, KeyRound, Check, ChevronDown, LoaderCircle, RefreshCw, Search } from "lucide-react";
 import type { ModelCatalog, ProviderId, ProviderInfo } from "../shared/contracts";
 import { modelLabel } from "../shared/models";
 import { api, setShell, useShell } from "./state";
 import { ProviderMark, providerNames } from "./Harness";
+import OpenCodeGoDialog from "./OpenCodeGoDialog";
 import ThinkingPicker from "./ThinkingPicker";
 import PermissionsPicker from "./PermissionsPicker";
 import type { PermissionMode } from "../shared/permissions";
@@ -34,6 +35,9 @@ export default function ModelPicker({
   onPermissionsChange: (mode: PermissionMode) => void | Promise<void>;
 }) {
   const { providers } = useShell();
+  const [goOpen, setGoOpen] = useState(false);
+  const [catalogRevision, setCatalogRevision] = useState(0);
+  const [goDefault, setGoDefault] = useState(false);
   const [open, setOpen] = useState(false);
   const [search, setSearch] = useState("");
   const [retry, setRetry] = useState(0);
@@ -48,7 +52,7 @@ export default function ModelPicker({
   const root = useRef<HTMLDivElement>(null);
   const trigger = useRef<HTMLButtonElement>(null);
   const searchInput = useRef<HTMLInputElement>(null);
-  const key = JSON.stringify([provider, projectId, taskId, retry]);
+  const key = JSON.stringify([provider, projectId, taskId, retry, catalogRevision]);
   const catalog = result?.key === key ? result.catalog : undefined;
   const error = result?.key === key ? result.error : undefined;
   const available = providers.find((p) => p.id === provider)?.available;
@@ -74,8 +78,13 @@ export default function ModelPicker({
     return () => abort.abort();
   }, [key, provider, projectId, taskId, available]);
   useEffect(() => {
+    if (!taskId && goDefault && catalog?.defaultModel) {
+      setGoDefault(false);
+      void onChange(provider, catalog.defaultModel);
+      return;
+    }
     if (!taskId && !model && catalog?.defaultModel) void onChange(provider, catalog.defaultModel);
-  }, [catalog, model, provider, taskId, onChange]);
+  }, [catalog, model, provider, taskId, onChange, goDefault]);
   useEffect(() => {
     if (!open) return;
     // Refresh native auth in the background; a slow harness must not delay typing or sending.
@@ -111,6 +120,12 @@ export default function ModelPicker({
   const models = (catalog?.models ?? []).filter((m) =>
     `${m.label} ${m.id} ${m.description ?? ""}`.toLowerCase().includes(search.toLowerCase()),
   );
+  const selectedGo = provider === "cloudflare" && !!selectedId?.startsWith("opencode-go/");
+  const groups = provider === "cloudflare" ? [
+    { id: "included", label: "Workers AI", note: "", models: models.filter((m) => m.id.startsWith("@cf/")) },
+    { id: "hosted", label: "Tinycode models", note: "", models: models.filter((m) => !m.id.startsWith("@cf/") && !m.id.startsWith("opencode-go/")) },
+    { id: "go", label: "OpenCode Go", note: "Your subscription", models: models.filter((m) => m.id.startsWith("opencode-go/")) },
+  ] : [{ id: "native", label: "", note: "", models }];
   async function choose(id: string) {
     if (!available) return;
     setSaving(true);
@@ -143,6 +158,14 @@ export default function ModelPicker({
   }
   return (
     <div className="composer-settings">
+      {goOpen && <OpenCodeGoDialog onClose={() => setGoOpen(false)} onSaved={(connected, changed) => {
+        setGoOpen(false);
+        setGoDefault(changed && (connected || !!model?.startsWith("opencode-go/")) && !taskId);
+        setCatalogRevision((n) => n + 1);
+        void api<ProviderInfo[]>("/providers").then((providers) => setShell({ providers })).catch(() => {});
+        setOpen(true);
+      }} />}
+
       <div className="model-picker" ref={root}>
         <button
           ref={trigger}
@@ -171,10 +194,10 @@ export default function ModelPicker({
             <span>{checking ? "Checking harnesses…" : "Connect a harness"}</span>
           ) : (
             <>
-              <ProviderMark id={provider} />
-              <span className="model-harness">{providerNames[provider]}</span>
+              {selectedGo ? <KeyRound size={13} className="go-source-icon" /> : <ProviderMark id={provider} />}
+              <span className="model-harness">{provider === "cloudflare" ? (selectedGo ? "OpenCode Go" : selectedId?.startsWith("@cf/") ? "Workers AI" : "Tinycode") : providerNames[provider]}</span>
               <span className="model-separator">/</span>
-              <span className="model-value">{label}</span>
+              <span className="model-value">{label.replace(/ \(Workers AI\)$/, "")}</span>
             </>
           )}
           <ChevronDown size={12} />
@@ -225,7 +248,7 @@ export default function ModelPicker({
                 <input
                   ref={searchInput}
                   aria-label="Search models"
-                  placeholder="Search models or enter an ID"
+                  placeholder={provider === "cloudflare" ? "Search models…" : "Search models or enter an ID"}
                   value={search}
                   maxLength={200}
                   onChange={(e) => setSearch(e.target.value)}
@@ -236,7 +259,7 @@ export default function ModelPicker({
                         ?.querySelector<HTMLButtonElement>('[role="menuitemradio"]')
                         ?.focus();
                     }
-                    if (e.key === "Enter" && search.trim() && !models.length && !loading) {
+                    if (provider !== "cloudflare" && e.key === "Enter" && search.trim() && !models.length && !loading) {
                       e.preventDefault();
                       void choose(search.trim());
                     }
@@ -291,7 +314,13 @@ export default function ModelPicker({
                 </p>
               )}
               {available &&
-                models.map((m) => (
+                groups.filter((group) => group.models.length).map((group) => (
+                <div className="model-group" role="group" aria-label={group.label || "Models"} data-source={group.id} key={group.id}>
+                  {group.label && <div className="model-group-heading">
+                    <span>{group.id === "go" ? <KeyRound size={13} /> : <Cloud size={14} />}{group.label}<span className="model-count">{group.models.length}</span></span>
+                    {group.note && <small>{group.note}</small>}
+                  </div>}
+                  {group.models.map((m) => (
                   <button
                     type="button"
                     role="menuitemradio"
@@ -304,19 +333,21 @@ export default function ModelPicker({
                     onClick={() => void choose(m.id)}
                   >
                     <span>
-                      {m.label}
+                      {m.label.replace(/ \(Workers AI\)$/, "")}
                       {provider === "pi" && <small>{m.description}</small>}
+                      {m.id.includes("muse-spark") && <small>Uses prompts for training · Limited regions</small>}
                     </span>
                     {(m.id === model || m.id === selectedId || m.resolvedId === selectedId) && (
                       <Check size={14} />
                     )}
                   </button>
-                ))}
+                ))}</div>))}
               {catalog && !models.length && !search && (
-                <p className="model-message">No models available. Enter a model ID above.</p>
+                <p className="model-message">No models available. Refresh to try again.</p>
               )}
+              {provider === "cloudflare" && catalog && search.trim() && !models.length && <p className="model-message">No models match “{search}”.</p>}
             </div>
-            {available && search.trim() && !models.length && !loading && (
+            {available && provider !== "cloudflare" && search.trim() && !models.length && !loading && (
               <button
                 className="custom-model"
                 disabled={saving}
@@ -330,6 +361,9 @@ export default function ModelPicker({
                 {saveError}
               </p>
             )}
+            {provider === "cloudflare" && providers.find((p) => p.id === provider)?.canManageGoKey && <button type="button" className="refresh-harnesses" onClick={() => { setOpen(false); setGoOpen(true); }}>
+              {catalog?.models.some((m) => m.id.startsWith("opencode-go/")) ? "Manage OpenCode Go" : "Connect OpenCode Go"}
+            </button>}
             <button
               type="button"
               className="refresh-harnesses"
@@ -337,7 +371,7 @@ export default function ModelPicker({
               onClick={() => void refresh()}
             >
               <RefreshCw size={13} className={refreshing ? "spin" : ""} />
-              {refreshing ? "Checking…" : "Refresh harnesses"}
+              {refreshing ? "Checking…" : provider === "cloudflare" ? "Refresh models" : "Refresh harnesses"}
             </button>
           </div>
         )}

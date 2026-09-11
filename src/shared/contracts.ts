@@ -12,6 +12,8 @@ export interface ProviderCapabilities {
 }
 
 export interface ProviderInfo {
+  /** This server exposes account-scoped Go credential management. */
+  canManageGoKey?: boolean;
   id: ProviderId;
   name: string;
   command: string;

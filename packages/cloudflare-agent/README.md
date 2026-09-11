@@ -1,5 +1,31 @@
 # Tinycode on Cloudflare
 
+## OpenCode Go
+
+In the durable agent's model picker, choose **Connect OpenCode Go**, paste an API
+key from the [OpenCode console](https://opencode.ai/auth), and save. New tasks select
+GLM 5.3 Flash. The picker separates your Go subscription from models paid by Tinycode,
+and includes all 37 IDs in Go’s public catalog as of September 11, 2026. Existing tasks keep
+their model until you change it in the picker. **Manage OpenCode Go** lets you replace
+or disconnect the key. Saving stores the key; the first inference request verifies
+that OpenCode accepts it and that subscription usage is available.
+
+This uses the existing GitHub account and `TINYCODE_AUTH_SECRET` configuration below.
+Keys are AES-GCM encrypted with account-and-provider binding in the Accounts DO.
+Only connection status reaches the browser; keys never enter task history or sandbox
+environment variables. Each model call loads the owner's current key, so replacing
+or disconnecting it applies to subsequent calls, including resumed tasks. Requests
+already sent can finish. Title generation uses the task's Go model and account too.
+
+The local catalog in `src/opencode-go.ts` records model capabilities and the protocol
+required by each model. Refresh it against [Go’s model list](https://opencode.ai/zen/go/v1/models)
+and [endpoint documentation](https://opencode.ai/docs/go/#endpoints) when adding models.
+Calls go directly to Go’s Chat Completions, Responses, or Messages endpoint with Tinycode's
+own user-agent and a stable task session header. There is no automatic switch to
+Cloudflare or another paid provider when Go rejects a request. OpenCode's own
+**Use balance** setting can charge the user's Zen balance after subscription limits;
+users manage that in their OpenCode console. See the [Go documentation](https://opencode.ai/docs/go/).
+
 ## GitHub sign-in and repository access
 
 Configure one **GitHub OAuth App** for this deployment (not a GitHub App installation):
@@ -179,17 +205,18 @@ Enable Unified Billing and fund your Cloudflare account for supported external m
 external model still sends inference to that provider; selecting a Workers AI model keeps inference
 on Cloudflare. See the [AI Gateway REST API](https://developers.cloudflare.com/ai-gateway/usage/rest-api/).
 
-The shipped picker includes GPT OSS 20B (the budget default) and GPT OSS 120B,
-all hosted on Workers AI. Existing OpenAI task IDs are preserved but routed through the gateway when explicitly enabled.
-To use only Cloudflare-hosted inference (including naming), set both `TINYCODE_DEFAULT_MODEL` and
-`TINYCODE_MODELS` to `@cf/openai/gpt-oss-120b`.
+The shipped Workers AI picker includes GLM 5.3 Flash (the default) and DeepSeek V4 Flash
+(0731). GPT OSS models are not enabled in the picker. Existing OpenAI task IDs are
+preserved but routed through the gateway when explicitly enabled. Local `.dev.vars`
+overrides should use the same `TINYCODE_MODELS` and `TINYCODE_DEFAULT_MODEL` values
+as `wrangler.jsonc` to show these choices.
 
 Model capabilities are a typed catalog in `src/gateway.ts`; native OpenAI metadata comes
 from the pinned Pi SDK. `TINYCODE_MODELS` selects the allowed IDs and
 `TINYCODE_DEFAULT_MODEL` selects the default. To add another model, add its verified
 tool-calling protocol, input types, limits and thinking levels to the catalog.
 
-The included [GPT OSS preset](https://developers.cloudflare.com/workers-ai/models/gpt-oss-120b/)
+The legacy [GPT OSS preset](https://developers.cloudflare.com/workers-ai/models/gpt-oss-120b/)
 uses Chat Completions, text inputs, a 128,000-token context and a conservative 4,096-token output budget.
 Workers AI streaming can lose tool-call boundaries or terminate without a final answer.
 The GPT OSS transport requests complete Chat Completions and adapts their typed results to Pi's
@@ -316,13 +343,13 @@ its slug). For the Workers AI free allocation, leave its Workers AI billing on
 **Account > Workers AI > Read** permission. See the [AI Gateway REST API](https://developers.cloudflare.com/ai-gateway/usage/rest-api/).
 
 Edit `packages/cloudflare-agent/.dev.vars`: replace the dummy account ID with your real
-32-character ID and fill `CLOUDFLARE_API_TOKEN`. Keep both model settings restricted to
-GPT OSS 120B. Restart `pnpm run dev:cloudflare`. Do not paste the inference token into
+32-character ID and fill `CLOUDFLARE_API_TOKEN`. Keep the model settings aligned with the template
+(GLM 5.3 Flash and DeepSeek V4 Flash). Restart `pnpm run dev:cloudflare`. Do not paste the inference token into
 the UI, chat, or sandbox. Do not run the credential-free HTTP smoke with this configuration.
 
 ### 3. Exercise the real agent path
 
-Create a new Cloudflare task with GPT OSS 120B, then work through this checklist:
+Create a new Cloudflare task with GLM 5.3 Flash, then work through this checklist:
 
 1. **Inference:** send `Reply with LOCAL_AGENT_OK without using any tools.` Expect streamed
    text and a completed turn. This proves actual gateway access, unlike the readiness check.
@@ -348,7 +375,7 @@ replay of potentially side-effecting work. Local testing does not establish prod
 eviction timing, placement, remote container cold-start behavior, or operation with your
 laptop off. Those require a deployed canary.
 
-GPT OSS 120B is text-only in our preset: skip image-understanding tests. The credential-free
+GLM 5.3 Flash supports image inputs; DeepSeek V4 Flash is text-only in our preset. The credential-free
 HTTP smoke covers attachment storage separately. Live private-repository access needs a configured GitHub OAuth connection. Durable
 workspace files and remote file/diff/terminal UI are not implemented.
 

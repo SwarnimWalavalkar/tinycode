@@ -2,7 +2,7 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 import Database from "better-sqlite3";
 import type { Env } from "./env.js";
 import { TaskStore } from "./task-store.js";
-import { internal } from "./http.js";
+import { HttpError, internal } from "./http.js";
 import { authorized, sessionToken } from "./auth.js";
 
 const fakes = vi.hoisted(() => ({
@@ -167,6 +167,30 @@ beforeEach(() => {
 });
 
 describe("cloud-authoritative tasks", () => {
+  it("uses the connected account's Go default when task creation omits a model", async () => {
+    const { env, agent, store } = fixture();
+    env.TINYCODE_AUTH_SECRET = "s".repeat(32);
+    const goStatus = vi.fn(async () => ({ connected: true, enabled: true }));
+    const goKey = vi.fn(async () => "test-go-key");
+    env.ACCOUNTS = { idFromName: (id: string) => id, get: () => ({ goStatus, goKey }) } as any;
+    const response = await agent.fetch(internal("/init", { id: "go-task", createdBy: "github-1" }));
+    expect(response.status).toBe(200);
+    expect(store.task().model).toBe("opencode-go/glm-5.3-flash");
+    expect(goStatus).toHaveBeenCalledWith("github-1");
+    expect(goKey).toHaveBeenCalledWith("github-1");
+  });
+
+  it("does not persist ownership when a Go key is disconnected", async () => {
+    const { env, agent, store } = fixture();
+    env.ACCOUNTS = { idFromName: (id: string) => id, get: () => ({
+      goKey: async () => { throw new HttpError(409, "Connect OpenCode Go"); },
+    }) } as any;
+    const response = await agent.fetch(internal("/init", { id: "invalid-task", createdBy: "github-1", model: "opencode-go/glm-5.3-flash" }));
+    expect(response.status).toBe(409);
+    expect(store.get("ownership")).toBeUndefined();
+    expect(store.get("task")).toBeUndefined();
+  });
+
   it("retains workspace, creator, and session GitHub identity across reload and repeated init", async () => {
     const { ctx, env, agent, store } = fixture();
     const ownership = { workspaceId: "personal-github-1", createdBy: "github-1", githubAccountId: "github-1" };
