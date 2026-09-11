@@ -73,12 +73,16 @@ describe("Cloudflare model boundary", () => {
     );
   });
 
-  it("streams a complete tool roundtrip with the shipped GPT OSS preset", async () => {
+  it("streams a complete tool roundtrip with an explicitly enabled legacy GPT OSS preset", async () => {
     const deployment = JSON.parse(
       readFileSync(new URL("../wrangler.jsonc", import.meta.url), "utf8"),
     ).vars;
     const modelId = workersModel;
-    const config = { ...deployment, ...env };
+    expect(deployment.TINYCODE_MODELS.split(",")).toEqual([
+      "@cf/zai-org/glm-5.3-flash", "@cf/deepseek-ai/deepseek-v4-flash-0731",
+    ]);
+    expect(deployment.TINYCODE_DEFAULT_MODEL).toBe("@cf/zai-org/glm-5.3-flash");
+    const config = { ...deployment, ...env, TINYCODE_MODELS: modelId };
     const requests: { url: string; headers: Headers; body: any }[] = [];
     vi.stubGlobal(
       "fetch",
