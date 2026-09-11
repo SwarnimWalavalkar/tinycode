@@ -205,17 +205,18 @@ Enable Unified Billing and fund your Cloudflare account for supported external m
 external model still sends inference to that provider; selecting a Workers AI model keeps inference
 on Cloudflare. See the [AI Gateway REST API](https://developers.cloudflare.com/ai-gateway/usage/rest-api/).
 
-The shipped picker includes GPT OSS 20B (the budget default) and GPT OSS 120B,
-all hosted on Workers AI. Existing OpenAI task IDs are preserved but routed through the gateway when explicitly enabled.
-To use only Cloudflare-hosted inference (including naming), set both `TINYCODE_DEFAULT_MODEL` and
-`TINYCODE_MODELS` to `@cf/openai/gpt-oss-120b`.
+The shipped Workers AI picker includes GLM 5.3 Flash (the default) and DeepSeek V4 Flash
+(0731). GPT OSS models are not enabled in the picker. Existing OpenAI task IDs are
+preserved but routed through the gateway when explicitly enabled. Local `.dev.vars`
+overrides should use the same `TINYCODE_MODELS` and `TINYCODE_DEFAULT_MODEL` values
+as `wrangler.jsonc` to show these choices.
 
 Model capabilities are a typed catalog in `src/gateway.ts`; native OpenAI metadata comes
 from the pinned Pi SDK. `TINYCODE_MODELS` selects the allowed IDs and
 `TINYCODE_DEFAULT_MODEL` selects the default. To add another model, add its verified
 tool-calling protocol, input types, limits and thinking levels to the catalog.
 
-The included [GPT OSS preset](https://developers.cloudflare.com/workers-ai/models/gpt-oss-120b/)
+The legacy [GPT OSS preset](https://developers.cloudflare.com/workers-ai/models/gpt-oss-120b/)
 uses Chat Completions, text inputs, a 128,000-token context and a conservative 4,096-token output budget.
 Workers AI streaming can lose tool-call boundaries or terminate without a final answer.
 The GPT OSS transport requests complete Chat Completions and adapts their typed results to Pi's
