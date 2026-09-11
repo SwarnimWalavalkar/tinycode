@@ -132,16 +132,29 @@ export class Accounts extends DurableObject<Env> {
     return { enabled: (this.env.TINYCODE_AUTH_SECRET?.length ?? 0) >= 32,
       connected: !!this.ctx.storage.sql.exec("SELECT owner FROM inference_credentials WHERE owner=?", ownerId(owner)).toArray().length };
   }
+  private goMutations = new Map<string, Promise<void>>();
+  private async mutateGo(owner: string, action: () => Promise<void>) {
+    const previous = this.goMutations.get(owner) ?? Promise.resolve();
+    const pending = previous.catch(() => {}).then(action);
+    this.goMutations.set(owner, pending);
+    try { await pending; }
+    finally { if (this.goMutations.get(owner) === pending) this.goMutations.delete(owner); }
+  }
   async saveGoKey(owner: string, value: string) {
     ownerId(owner);
     const access = value.trim();
     if (!access || access.length > 4096 || /[\s\x00-\x1f\x7f]/.test(access))
       throw new HttpError(400, "Enter a valid OpenCode Go API key");
-    const sealed = await this.seal({ access }, `opencode-go:${owner}`);
-    this.ctx.storage.sql.exec("INSERT INTO inference_credentials VALUES (?,?) ON CONFLICT(owner) DO UPDATE SET credential=excluded.credential", owner, sealed);
+    await this.mutateGo(owner, async () => {
+      const sealed = await this.seal({ access }, `opencode-go:${owner}`);
+      this.ctx.storage.sql.exec("INSERT INTO inference_credentials VALUES (?,?) ON CONFLICT(owner) DO UPDATE SET credential=excluded.credential", owner, sealed);
+    });
   }
   async disconnectGo(owner: string) {
-    this.ctx.storage.sql.exec("DELETE FROM inference_credentials WHERE owner=?", ownerId(owner));
+    ownerId(owner);
+    await this.mutateGo(owner, async () => {
+      this.ctx.storage.sql.exec("DELETE FROM inference_credentials WHERE owner=?", owner);
+    });
   }
   async goKey(owner: string): Promise<string> {
     const row = this.ctx.storage.sql.exec<{ credential: string }>("SELECT credential FROM inference_credentials WHERE owner=?", ownerId(owner)).toArray()[0];

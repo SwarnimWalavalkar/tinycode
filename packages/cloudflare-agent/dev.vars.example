@@ -7,8 +7,8 @@ CLOUDFLARE_GATEWAY_ID="default"
 # account-scoped API token with Account > Workers AI > Read permission.
 CLOUDFLARE_API_TOKEN=""
 # Restrict local conversations AND title suggestions to Workers AI.
-TINYCODE_DEFAULT_MODEL="@cf/openai/gpt-oss-120b"
-TINYCODE_MODELS="@cf/openai/gpt-oss-120b"
+TINYCODE_DEFAULT_MODEL="@cf/zai-org/glm-5.3-flash"
+TINYCODE_MODELS="@cf/zai-org/glm-5.3-flash,@cf/deepseek-ai/deepseek-v4-flash-0731"
 
 # Optional GitHub account mode: configure ALL THREE with a separate development
 # OAuth App whose callback is http://localhost:8794/api/auth/github/callback.

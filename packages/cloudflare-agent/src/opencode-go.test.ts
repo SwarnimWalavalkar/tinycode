@@ -24,7 +24,12 @@ describe("OpenCode Go inference", () => {
     const agent = createPiAgent({} as Env, { sessionId: "catalog-test", modelId: definition.id, systemPrompt: "Help with code", getGoKey: async () => "go-test-key" });
     await agent.prompt("Hello");
     expect(calls).toHaveLength(1);
-    const endpoint = definition.api === "anthropic-messages" ? "messages" : definition.api === "openai-responses" ? "responses" : "chat/completions";
+    // Independent upstream endpoint contract: opencode.ai/docs/go/#endpoints.
+    // Legacy Qwen3.5 inherits the OpenAI-compatible default in models.dev.
+    const messages = ["minimax-m3", "minimax-m2.7", "minimax-m2.5", "qwen3.8-max", "qwen3.8-flash", "qwen3.7-max", "qwen3.7-plus", "qwen3.6-plus"];
+    const responses = ["gpt-5.6-luna", "grok-4.5", "grok-4.6", "muse-spark-1.3-contributor", "muse-spark-1.2-contributor"];
+    const id = definition.id.slice("opencode-go/".length);
+    const endpoint = messages.includes(id) ? "messages" : responses.includes(id) ? "responses" : "chat/completions";
     expect(calls[0].url).toBe(`${GO_BASE_URL}/${endpoint}`);
     expect(calls[0].body.model).toBe(definition.id.slice("opencode-go/".length));
     expect(calls[0].headers.get("x-opencode-session")).toBe("catalog-test");

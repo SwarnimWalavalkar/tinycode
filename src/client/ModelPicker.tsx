@@ -158,9 +158,9 @@ export default function ModelPicker({
   }
   return (
     <div className="composer-settings">
-      {goOpen && <OpenCodeGoDialog onClose={() => setGoOpen(false)} onSaved={(selectDefault) => {
+      {goOpen && <OpenCodeGoDialog onClose={() => setGoOpen(false)} onSaved={(connected, changed) => {
         setGoOpen(false);
-        setGoDefault(selectDefault && !taskId);
+        setGoDefault(changed && (connected || !!model?.startsWith("opencode-go/")) && !taskId);
         setCatalogRevision((n) => n + 1);
         void api<ProviderInfo[]>("/providers").then((providers) => setShell({ providers })).catch(() => {});
         setOpen(true);
@@ -361,7 +361,7 @@ export default function ModelPicker({
                 {saveError}
               </p>
             )}
-            {provider === "cloudflare" && <button type="button" className="refresh-harnesses" onClick={() => { setOpen(false); setGoOpen(true); }}>
+            {provider === "cloudflare" && providers.find((p) => p.id === provider)?.canManageGoKey && <button type="button" className="refresh-harnesses" onClick={() => { setOpen(false); setGoOpen(true); }}>
               {catalog?.models.some((m) => m.id.startsWith("opencode-go/")) ? "Manage OpenCode Go" : "Connect OpenCode Go"}
             </button>}
             <button

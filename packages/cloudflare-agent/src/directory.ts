@@ -48,6 +48,7 @@ export function providers(env: Env, goConnected = false): ProviderInfo[] {
       id: "cloudflare",
       name: "Durable Agent",
       command: "",
+      canManageGoKey: true,
       available: available || goConnected,
       readiness: available || goConnected ? "ready" : "unauthenticated",
       capabilities: {
@@ -309,9 +310,13 @@ export class TaskDirectory extends DurableObject<Env> {
             400,
             "Choose a Cloudflare task with no local project",
           );
-        if (typeof input.model === "string" && isGoModel(input.model))
-          await accountStore(this.env).goKey(this.owner());
         const requestId = identifier(input.requestId ?? crypto.randomUUID());
+        const mappedId = this.owner() === LEGACY_OWNER ? requestId : this.ctx.storage.sql
+          .exec<{ task_id: string }>("SELECT task_id FROM task_creation_requests WHERE request_id=?", requestId).toArray()[0]?.task_id;
+        const committed = mappedId && this.ctx.storage.sql
+          .exec("SELECT id FROM tasks WHERE id=? AND cursor >= 0", mappedId).toArray().length;
+        if (!committed && typeof input.model === "string" && isGoModel(input.model))
+          await accountStore(this.env).goKey(this.owner());
         let id = requestId;
         if (this.owner() !== LEGACY_OWNER) {
           // Caller IDs are idempotency keys, never globally addressable actor IDs.

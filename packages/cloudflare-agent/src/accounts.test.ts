@@ -517,6 +517,38 @@ describe("account isolation through the Worker and directory", () => {
 
 
 describe("OpenCode Go account connection", () => {
+  it.each(["disconnect", "replace"])("orders a pending save before a later %s", async (operation) => {
+    const { accounts } = fixture();
+    let release!: () => void;
+    const gate = new Promise<void>((resolve) => { release = resolve; });
+    const seal = (accounts as any).seal.bind(accounts);
+    vi.spyOn(accounts as any, "seal").mockImplementationOnce(async (...args: unknown[]) => { await gate; return seal(...args); });
+    const first = accounts.saveGoKey("github-1", "old-key");
+    const next = operation === "disconnect" ? accounts.disconnectGo("github-1") : accounts.saveGoKey("github-1", "new-key");
+    await accounts.saveGoKey("github-2", "independent-key");
+    expect(await accounts.goKey("github-2")).toBe("independent-key");
+    release();
+    await Promise.all([first, next]);
+    if (operation === "disconnect") await expect(accounts.goKey("github-1")).rejects.toThrow("Connect OpenCode Go");
+    else expect(await accounts.goKey("github-1")).toBe("new-key");
+  });
+
+  it("returns a committed creation after disconnect but rejects a fresh creation", async () => {
+    const { env, accounts } = fixture();
+    const one = await signIn(accounts);
+    await accounts.saveGoKey("github-1", "key");
+    const input = { provider: "cloudflare", requestId: "retry-go", model: "opencode-go/glm-5.3-flash" };
+    const created = await worker.fetch(request("/api/tasks", one.token, "POST", input), env);
+    expect(created.status).toBe(200);
+    const task = await created.json();
+    await accounts.disconnectGo("github-1");
+    const retry = await worker.fetch(request("/api/tasks", one.token, "POST", input), env);
+    expect(retry.status).toBe(200);
+    expect(await retry.json()).toEqual(task);
+    expect((await worker.fetch(request("/api/tasks", one.token, "POST", { ...input, requestId: "fresh-go" }), env)).status).toBe(409);
+    expect((await worker.fetch(request("/api/tasks", one.token, "POST", { ...input, model: "opencode-go/glm-5.3" }), env)).status).toBe(409);
+  });
+
   it("rejects disconnected Go task creation before allocating task records", async () => {
     const { env, accounts, contexts, agentFetch } = fixture();
     const one = await signIn(accounts);

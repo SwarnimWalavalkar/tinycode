@@ -343,13 +343,13 @@ its slug). For the Workers AI free allocation, leave its Workers AI billing on
 **Account > Workers AI > Read** permission. See the [AI Gateway REST API](https://developers.cloudflare.com/ai-gateway/usage/rest-api/).
 
 Edit `packages/cloudflare-agent/.dev.vars`: replace the dummy account ID with your real
-32-character ID and fill `CLOUDFLARE_API_TOKEN`. Keep both model settings restricted to
-GPT OSS 120B. Restart `pnpm run dev:cloudflare`. Do not paste the inference token into
+32-character ID and fill `CLOUDFLARE_API_TOKEN`. Keep the model settings aligned with the template
+(GLM 5.3 Flash and DeepSeek V4 Flash). Restart `pnpm run dev:cloudflare`. Do not paste the inference token into
 the UI, chat, or sandbox. Do not run the credential-free HTTP smoke with this configuration.
 
 ### 3. Exercise the real agent path
 
-Create a new Cloudflare task with GPT OSS 120B, then work through this checklist:
+Create a new Cloudflare task with GLM 5.3 Flash, then work through this checklist:
 
 1. **Inference:** send `Reply with LOCAL_AGENT_OK without using any tools.` Expect streamed
    text and a completed turn. This proves actual gateway access, unlike the readiness check.
@@ -375,7 +375,7 @@ replay of potentially side-effecting work. Local testing does not establish prod
 eviction timing, placement, remote container cold-start behavior, or operation with your
 laptop off. Those require a deployed canary.
 
-GPT OSS 120B is text-only in our preset: skip image-understanding tests. The credential-free
+GLM 5.3 Flash supports image inputs; DeepSeek V4 Flash is text-only in our preset. The credential-free
 HTTP smoke covers attachment storage separately. Live private-repository access needs a configured GitHub OAuth connection. Durable
 workspace files and remote file/diff/terminal UI are not implemented.
 

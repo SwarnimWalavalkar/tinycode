@@ -39,7 +39,7 @@ export const GO_MODELS = [
   {"id": "opencode-go/muse-spark-1.2-contributor", "name": "Muse Spark 1.2 Contributor", "api": "openai-responses", "contextWindow": 1048576, "input": ["text", "image"]},
   {"id": "opencode-go/muse-spark-1.3-contributor", "name": "Muse Spark 1.3 Contributor", "api": "openai-responses", "contextWindow": 1048576, "input": ["text", "image"]},
   {"id": "opencode-go/omen-alpha", "name": "Omen Alpha", "api": "openai-completions", "contextWindow": 500000, "input": ["text", "image"]},
-  {"id": "opencode-go/qwen3.5-plus", "name": "Qwen3.5 Plus", "api": "anthropic-messages", "contextWindow": 262144, "input": ["text", "image"]},
+  {"id": "opencode-go/qwen3.5-plus", "name": "Qwen3.5 Plus", "api": "openai-completions", "contextWindow": 262144, "input": ["text", "image"]},
   {"id": "opencode-go/qwen3.6-plus", "name": "Qwen3.6 Plus", "api": "anthropic-messages", "contextWindow": 1000000, "input": ["text", "image"]},
   {"id": "opencode-go/qwen3.7-max", "name": "Qwen3.7 Max", "api": "anthropic-messages", "contextWindow": 1000000, "input": ["text"]},
   {"id": "opencode-go/qwen3.7-plus", "name": "Qwen3.7 Plus", "api": "anthropic-messages", "contextWindow": 1000000, "input": ["text", "image"]},

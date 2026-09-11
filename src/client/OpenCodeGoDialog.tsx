@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { LoaderCircle } from "lucide-react";
 import Dialog from "./Dialog";
 import { api } from "./state";
@@ -6,22 +6,24 @@ import { api } from "./state";
 interface ConnectionStatus { enabled: boolean; connected: boolean }
 export default function OpenCodeGoDialog({ onClose, onSaved }: {
   onClose: () => void;
-  onSaved: (selectDefault: boolean) => void;
+  onSaved: (connected: boolean, changed: boolean) => void;
 }) {
+  const alive = useRef(false);
   const [status, setStatus] = useState<ConnectionStatus>();
   const [apiKey, setApiKey] = useState("");
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
   useEffect(() => {
+    alive.current = true;
     const abort = new AbortController();
     void api<ConnectionStatus>("/inference/opencode-go", { signal: abort.signal }).then(
       (value) => { if (!abort.signal.aborted) setStatus(value); },
       (error) => { if (!abort.signal.aborted) setError(error.message); },
     );
-    return () => abort.abort();
+    return () => { alive.current = false; abort.abort(); };
   }, []);
   async function save(method: "PUT" | "DELETE") {
-    if (busy) return;
+    if (busy || !status?.enabled || (method === "PUT" && !apiKey.trim())) return;
     setBusy(true);
     setError("");
     try {
@@ -29,11 +31,13 @@ export default function OpenCodeGoDialog({ onClose, onSaved }: {
         method,
         ...(method === "PUT" ? { body: JSON.stringify({ apiKey: apiKey.trim() }) } : {}),
       });
+      if (!alive.current) return;
       setApiKey("");
-      onSaved(next.connected !== status?.connected);
+      onSaved(next.connected, next.connected !== status?.connected);
     } catch (error) {
+      if (!alive.current) return;
       setError(error instanceof Error ? error.message : "Could not save your key. Try again.");
-    } finally { setBusy(false); }
+    } finally { if (alive.current) setBusy(false); }
   }
   return (
     <Dialog title="OpenCode Go" onClose={onClose}>
