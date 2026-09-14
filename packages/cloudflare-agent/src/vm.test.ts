@@ -32,9 +32,9 @@ function runtime(): VmRuntime {
 }
 
 describe("VM tools", () => {
-  it("keeps commands inside the agent workspace and uses the default timeout", async () => {
+  it("validates the initial command working directory and uses the default timeout", async () => {
     const vm = runtime();
-    const tool = createVmTools(vm).find((tool) => tool.name === "vm_exec")!;
+    const tool = createVmTools(vm).find((tool) => tool.name === "shell")!;
     await expect(
       tool.execute("call", { command: "pwd", cwd: "/etc" }, undefined as never),
     ).rejects.toThrow("inside /workspace");
@@ -51,12 +51,27 @@ describe("VM tools", () => {
     expect(vm.exec).toHaveBeenCalledWith("pwd", "/workspace", 30_000, undefined);
   });
 
+  it("routes lifecycle actions and rejects invalid or cancelled requests", async () => {
+    const vm = runtime();
+    const tool = createVmTools(vm).find(tool => tool.name === "vm_manage")!;
+    await tool.execute("call", { action: "status" }, undefined as never);
+    expect(vm.status).toHaveBeenCalledOnce();
+    expect(vm.start).not.toHaveBeenCalled();
+    await tool.execute("call", { action: "start" }, undefined as never);
+    expect(vm.start).toHaveBeenCalledOnce();
+    await tool.execute("call", { action: "destroy" }, undefined as never);
+    expect(vm.destroy).toHaveBeenCalledOnce();
+    await expect(tool.execute("call", { action: "bogus" }, undefined as never)).rejects.toThrow("Choose");
+    await expect(tool.execute("call", { action: "destroy" }, AbortSignal.abort())).rejects.toThrow("interrupted");
+    expect(vm.destroy).toHaveBeenCalledOnce();
+  });
+
   it("exposes explicit start, status, and destructive cleanup", () => {
     expect(createVmTools(runtime()).map((tool) => tool.name)).toEqual([
-      "vm_start",
-      "vm_exec",
-      "vm_status",
-      "vm_destroy",
+      "vm_manage",
+      "shell",
+      "file_read",
+      "file_write",
     ]);
   });
 });

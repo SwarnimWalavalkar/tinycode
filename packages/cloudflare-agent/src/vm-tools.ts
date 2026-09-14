@@ -1,5 +1,6 @@
 import type { AgentTool } from "@earendil-works/pi-agent-core";
 import { Type } from "typebox";
+import { runFileTool } from "./file-tools.js";
 
 export type VmState = "absent" | "ready" | "destroyed";
 export interface VmSnapshot {
@@ -29,6 +30,11 @@ const result = (value: unknown) => ({
   details: value as Record<string, unknown>,
 });
 
+function objectInput(input: unknown): Record<string, unknown> {
+  if (!input || typeof input !== "object" || Array.isArray(input)) throw new Error("Expected tool arguments");
+  return input as Record<string, unknown>;
+}
+
 function workspacePath(value: string): string {
   if (!value.startsWith("/")) throw new Error("VM working directory must be inside /workspace");
   const segments: string[] = [];
@@ -46,16 +52,24 @@ function workspacePath(value: string): string {
 export function createVmTools(vm: VmRuntime): AgentTool<any>[] {
   return [
     {
-      name: "vm_start",
-      label: "Start Linux VM",
+      name: "vm_manage",
+      label: "Manage Linux VM",
       description:
-        "Start this agent's isolated Cloudflare Linux sandbox. It is reused while the container is awake; files are ephemeral after an idle sleep or destroy.",
-      parameters: Type.Object({}),
+        "Manage this task's Linux sandbox: start, status (last known snapshot, not live health), or destroy. File and shell tools start it automatically. Files are lost after idle sleep. Destroy is permanent; use only with user permission and when its files are no longer needed. Sandbox identity is managed by the runtime.",
+      parameters: Type.Object({ action: Type.Union([Type.Literal("start"), Type.Literal("status"), Type.Literal("destroy")]) }),
       executionMode: "sequential",
-      execute: async (_id, _input, signal) => result(await vm.start(signal)),
+      execute: async (_id, input, signal) => {
+        if (signal?.aborted) throw new Error("VM operation was interrupted");
+        switch (objectInput(input).action) {
+          case "start": return result(await vm.start(signal));
+          case "status": return result(vm.status());
+          case "destroy": return result(await vm.destroy());
+          default: throw new Error("Choose start, status, or destroy");
+        }
+      },
     },
     {
-      name: "vm_exec",
+      name: "shell",
       label: "Run in Linux VM",
       description:
         "Run a shell command in this agent's isolated Linux sandbox. Starting the VM is automatic when needed. For GitHub accounts, git and gh are already authenticated as the user; use normal HTTPS clone/push and gh pr create commands. Never request or print credentials. Git author identity is configured automatically. After an interrupted push or PR creation, inspect remote state before retrying.",
@@ -74,21 +88,33 @@ export function createVmTools(vm: VmRuntime): AgentTool<any>[] {
       },
     },
     {
-      name: "vm_status",
-      label: "Inspect Linux VM",
-      description:
-        "Report the last known VM lifecycle state. An idle Cloudflare container may have slept since this snapshot and will start fresh on the next command.",
-      parameters: Type.Object({}),
-      execute: async () => result(vm.status()),
+      name: "file_read",
+      label: "Read file",
+      description: "Read a UTF-8 text file in /workspace. Paths may be workspace-relative or absolute. Starts the VM automatically. Returns up to 200 lines by default and 16 KiB, with a revision and nextOffset for continuation. Use shell for binary files or lines exceeding the byte limit.",
+      parameters: Type.Object({
+        path: Type.String({ minLength: 1, maxLength: 4096 }),
+        offset: Type.Optional(Type.Integer({ minimum: 1 })),
+        limit: Type.Optional(Type.Integer({ minimum: 1, maximum: 2000 })),
+      }),
+      executionMode: "sequential",
+      execute: async (_id, input, signal) => result(await runFileTool(vm, { ...objectInput(input), action: "read" }, signal)),
     },
     {
-      name: "vm_destroy",
-      label: "Destroy Linux VM",
-      description:
-        "Permanently destroy this agent's VM, including its files and processes. Use only when its workspace is no longer needed.",
-      parameters: Type.Object({}),
+      name: "file_write",
+      label: "Write file",
+      description: "Create or edit UTF-8 files in /workspace. Starts the VM automatically. Default replace mode applies edits against the original file: each oldText must match exactly once, and edits must not overlap. All edits are validated before an atomic save. Use mode write with content to create or completely overwrite a file (parent directories are created). Optionally supply the revision from file_read to reject stale edits. Returns a bounded diff. Paths may be workspace-relative or absolute.",
+      parameters: Type.Object({
+        path: Type.String({ minLength: 1, maxLength: 4096 }),
+        mode: Type.Optional(Type.Union([Type.Literal("replace"), Type.Literal("write")])),
+        content: Type.Optional(Type.String({ maxLength: 32000 })),
+        edits: Type.Optional(Type.Array(Type.Object({
+          oldText: Type.String({ minLength: 1, maxLength: 32000 }),
+          newText: Type.String({ maxLength: 32000 }),
+        }), { minItems: 1, maxItems: 100 })),
+        revision: Type.Optional(Type.String({ minLength: 64, maxLength: 64 })),
+      }),
       executionMode: "sequential",
-      execute: async () => result(await vm.destroy()),
+      execute: async (_id, input, signal) => result(await runFileTool(vm, { ...objectInput(input), action: "edit" }, signal)),
     },
   ];
 }

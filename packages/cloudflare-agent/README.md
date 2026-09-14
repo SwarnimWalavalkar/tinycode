@@ -277,13 +277,24 @@ and `/api/models`.
 
 ## VM and product boundaries
 
-The tools are `vm_start`, `vm_exec`, `vm_status`, and `vm_destroy`. A Sandbox starts lazily,
+The tools are `vm_manage`, `file_read`, `file_write`, and `shell`. `vm_manage` accepts
+`action: "start" | "status" | "destroy"`. `file_read` accepts `path`, optional
+1-based `offset`, and `limit` (default 200 lines, maximum 2000), with a 16 KiB
+preview cap and `nextOffset` for continuation. `file_write` defaults to exact
+replacement via `edits: [{ oldText, newText }]`; every match must be unique and
+non-overlapping in the original file. Use `mode: "write"` with `content` to create
+or overwrite a file. An optional `revision` from `file_read` rejects stale edits.
+File operations support UTF-8 text up to 1 MB, return bounded results, and resolve
+paths and symlinks inside `/workspace`. Each edit call has a 40 KB encoded-JSON
+input budget; split larger edits across calls. All four tools execute sequentially.
+
+A Sandbox starts lazily,
 with Node, Git, Python 3, pip, and venv available in the image. Its stable sandbox name encodes
 the full Durable Object identity in base36 to fit the Sandbox SDK's 63-character limit.
 It sleeps after ten idle minutes, and can be removed explicitly. Its filesystem is **ephemeral**
 across sleep/replacement/destruction; durable conversation storage does not make workspace files
-durable. Cloud tasks are projectless, with VM tool calls and results in the transcript. Remote
-terminal, file explorer, diff inspection, and workspace snapshots are not implemented. GitHub-connected users can clone private repositories directly.
+durable. Cloud tasks are projectless, with VM tool calls and results in the transcript. The UI supports shell commands, file browsing/editing, and diff inspection; workspace
+checkpoint/restore is not implemented. GitHub-connected users can clone private repositories directly.
 
 The Sandbox receives no real GitHub credentials. GitHub account mode injects them outside the
 VM through outbound handlers; token mode supports public clones only. Registry and other integration
@@ -353,20 +364,20 @@ Create a new Cloudflare task with GLM 5.3 Flash, then work through this checklis
 
 1. **Inference:** send `Reply with LOCAL_AGENT_OK without using any tools.` Expect streamed
    text and a completed turn. This proves actual gateway access, unlike the readiness check.
-2. **Sandbox:** send `Use vm_start, then vm_exec to run python3 -c 'import platform; print(platform.system()); print(6*7)'. Report the actual output.`
+2. **Sandbox:** send `Use shell to run python3 -c 'import platform; print(platform.system()); print(6*7)'. Report the actual output.`
    Expect visible tool calls, Linux, and 42. First startup can take longer while Docker builds/starts.
 3. **Filesystem within a running sandbox:** ask it to create `/tmp/tinycode-e2e.txt` with
    `SANDBOX_OK`, then read it in a separate tool call. Expect the same content; this does
    not establish persistence across sandbox destruction or sleep.
-4. **Browser disconnect:** ask it to run `sleep 20; echo DETACHED_OK` through `vm_exec`.
+4. **Browser disconnect:** ask it to run `sleep 20; echo DETACHED_OK` through `shell`.
    Once execution starts, close the browser tab, leaving Wrangler and Docker running.
    Reopen the same URL after completion. Expect the tool result and completed transcript.
 5. **History across runtime restarts:** after the turn finishes, stop Wrangler with Ctrl-C,
    restart the same command, and reopen the task. Expect the saved conversation. Ask a
    follow-up about the earlier result to check restored model context too.
-6. **Stop:** request `sleep 60; echo SHOULD_NOT_FINISH` through `vm_exec`, then press Stop
+6. **Stop:** request `sleep 60; echo SHOULD_NOT_FINISH` through `shell`, then press Stop
    while it runs. Expect an interrupted/stopped turn, not a successful completion output.
-7. **Cleanup:** ask the agent to call `vm_destroy`. Conversation history should remain;
+7. **Cleanup:** ask the agent to call `vm_manage` with `action: "destroy"`. Conversation history should remain;
    sandbox files are not guaranteed to remain. Stop Wrangler when done.
 
 Optional crash recovery check: stop Wrangler during a running command and restart it.
