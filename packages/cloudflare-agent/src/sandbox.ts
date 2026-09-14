@@ -40,6 +40,17 @@ export class Sandbox extends CloudflareSandbox<Env> {
     return this.containerFetch(request(), 3002);
   }
   override async fetch(request: Request) {
+    const url = new URL(request.url);
+    if (url.pathname === "/tinycode-workspace" && request.method === "GET") {
+      const action = url.searchParams.get("action");
+      if (action !== "tree" && action !== "file") return new Response("Invalid action", { status: 400 });
+      try {
+        return await this.readWorkspace(action, url.searchParams.get("path") ?? "");
+      } catch (error) {
+        console.error("workspace.read failed", error);
+        throw error;
+      }
+    }
     if (new URL(request.url).pathname === "/tinycode-terminal")
       return this.containerFetch(new Request("http://localhost/terminal", request), 3001);
     return super.fetch(request);

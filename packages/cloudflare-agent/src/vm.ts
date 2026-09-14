@@ -211,7 +211,7 @@ export class CloudflareSandboxVm implements VmRuntime {
     this.assertAvailable();
     if (this.readSnapshot().state !== "ready")
       throw new Error("The agent has not created a sandbox yet.");
-    const response = await this.sandbox().readWorkspace(action, path);
+    const response = await this.sandbox().fetch(new Request(`http://internal/tinycode-workspace?action=${action}&path=${encodeURIComponent(path)}`));
     this.used("ready");
     return response;
   }

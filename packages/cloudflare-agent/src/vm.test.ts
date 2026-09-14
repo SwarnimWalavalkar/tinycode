@@ -9,7 +9,6 @@ const sandbox = vi.hoisted(() => ({
   bindGithub: vi.fn(),
   ensureTerminalSession: vi.fn(),
   fetch: vi.fn(),
-  readWorkspace: vi.fn(),
 }));
 
 vi.mock("@cloudflare/sandbox", () => ({ getSandbox: () => sandbox }));
@@ -85,9 +84,9 @@ describe("Cloudflare Sandbox VM", () => {
   });
   it("uses direct filesystem reads without executing shell commands", async () => {
     const { vm } = fixture({ state: "ready", lastUsedAt: null });
-    sandbox.readWorkspace.mockResolvedValue(new Response('{"content":"hello"}'));
+    sandbox.fetch.mockResolvedValue(new Response('{"content":"hello"}'));
     expect(await (await vm.readWorkspace("file", "hello.txt")).json()).toEqual({ content: "hello" });
-    expect(sandbox.readWorkspace).toHaveBeenCalledWith("file", "hello.txt");
+    expect(sandbox.fetch.mock.calls[0][0].url).toBe("http://internal/tinycode-workspace?action=file&path=hello.txt");
     expect(sandbox.exec).not.toHaveBeenCalled();
     const absent = fixture({ state: "absent", lastUsedAt: null });
     await expect(absent.vm.readWorkspace("tree", "")).rejects.toThrow("not created");
