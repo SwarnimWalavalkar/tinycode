@@ -118,6 +118,7 @@ export default function Terminal({
     return () => {
       if (remote) remote.dispose();
       else sendSocket({ type: "terminal.detach" });
+      if (remoteTerminal.current === remote) remoteTerminal.current = undefined;
       observer.disconnect();
       cancelAnimationFrame(frame);
       off();
@@ -141,9 +142,15 @@ export default function Terminal({
             <button
               onClick={() => {
                 if (cloud) {
+                  const remote = remoteTerminal.current;
                   void api(`/tasks/${taskId}/terminal`, { method: "DELETE" })
-                    .then(() => { remoteTerminal.current?.dispose(); setExited(true); })
-                    .catch(() => setRemoteStatus("disconnected"));
+                    .then(() => {
+                      remote?.dispose();
+                      if (remoteTerminal.current === remote) setExited(true);
+                    })
+                    .catch(() => {
+                      if (remoteTerminal.current === remote) setRemoteStatus("disconnected");
+                    });
                 } else if (terminalId.current)
                   sendSocket({ type: "terminal.close", terminalId: terminalId.current });
               }}
