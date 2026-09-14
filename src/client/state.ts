@@ -132,6 +132,7 @@ export function latest() {
   if (shell.activeTaskId) sendSocket({ type: "subscribe", taskId: shell.activeTaskId });
 }
 export function selectTask(id: string | null) {
+  if (id !== shell.activeTaskId && !window.dispatchEvent(new Event("tinycode:before-task-change", { cancelable: true }))) return;
   cloudCursor = undefined;
   cloudSyncing = true;
   history.replaceState(null, "", id ? `#${id}` : location.pathname);

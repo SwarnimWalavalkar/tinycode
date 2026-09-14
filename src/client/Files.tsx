@@ -54,7 +54,12 @@ export default function Files({
   initialTab = "files",
   initialPath,
   theme,
+  embedded = false, previewOnly = false, onOpenPreview, registerCloseGuard,
 }: {
+  embedded?: boolean;
+  previewOnly?: boolean;
+  onOpenPreview?: (path: string, diff: boolean) => void;
+  registerCloseGuard?: (guard: (() => boolean) | null) => void;
   taskId?: string;
   source?: WorkspaceSource;
   workspaceName?: string;
@@ -166,6 +171,10 @@ export default function Files({
     return () => window.removeEventListener("beforeunload", beforeUnload);
   }, [dirty]);
   const discard = () => !dirty || confirm("Discard your unsaved changes?");
+  useEffect(() => {
+    registerCloseGuard?.(() => !saving && discard());
+    return () => registerCloseGuard?.(null);
+  }, [dirty, saving, registerCloseGuard]);
   async function open(path: string, diff = false) {
     if (saving || !discard()) return;
     request.current?.abort();
@@ -224,6 +233,7 @@ export default function Files({
     }
   }
   function back() {
+    if (previewOnly) { onClose(); return; }
     if (saving || !discard()) return;
     request.current?.abort();
     setLoadingPath(null);
@@ -251,7 +261,7 @@ export default function Files({
     <aside
       ref={pane}
       aria-label="Workspace explorer"
-      className={`files-pane ${viewing ? "preview" : ""} ${width ? "resized" : ""} ${expanded ? "expanded" : ""} ${resizing ? "resizing" : ""}`}
+      className={`files-pane ${embedded ? "embedded" : ""} ${previewOnly ? "preview-only" : ""} ${viewing ? "preview" : ""} ${width ? "resized" : ""} ${expanded ? "expanded" : ""} ${resizing ? "resizing" : ""}`}
       style={
         {
           colorScheme: theme,
@@ -361,7 +371,7 @@ export default function Files({
           className="icon-button"
           disabled={saving}
           onClick={() => {
-            if (discard()) onClose();
+            if (registerCloseGuard || discard()) onClose();
           }}
         >
           <X size={15} />
@@ -409,7 +419,7 @@ export default function Files({
               resetSelection={selectionReset}
               activePath={treeOverlay ? undefined : activePath}
               theme={theme}
-              onOpen={(path) => void open(path)}
+              onOpen={(path) => onOpenPreview ? onOpenPreview(path, false) : void open(path)}
             />
           </div>
           <div className="file-list" hidden={tab !== "changes"}>
@@ -421,7 +431,7 @@ export default function Files({
                 resetSelection={selectionReset}
                 activePath={treeOverlay ? undefined : activePath}
                 theme={theme}
-                onOpen={(path) => void open(path, true)}
+                onOpen={(path) => onOpenPreview ? onOpenPreview(path, true) : void open(path, true)}
               />
             ) : (
               <div className="panel-empty">

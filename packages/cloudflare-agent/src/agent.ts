@@ -1,3 +1,4 @@
+import { readWorkspace } from './workspace.js';
 import { directoryName, imageKey, LEGACY_OWNER, ownerId, personalWorkspace, workspaceId, type TaskOwnership } from "./ownership.js";
 import { accountStore } from "./accounts.js";
 import { isGoModel } from "./opencode-go.js";
@@ -56,6 +57,8 @@ export class DurablePiAgent extends DurableObject<Env> {
   private flushTimer?: ReturnType<typeof setTimeout>;
   private stopping = false;
   private vm: CloudflareSandboxVm;
+  private workspaceTail: Promise<void> = Promise.resolve();
+  private workspaceBusy = false;
 
   constructor(ctx: DurableObjectState, env: Env) {
     super(ctx, env);
@@ -372,7 +375,7 @@ export class DurablePiAgent extends DurableObject<Env> {
   }
   private start() {
     if (this.store.get("deleted")) return;
-    if (this.running || this.stopping || this.store.get("paused")) return;
+    if (this.running || this.workspaceBusy || this.stopping || this.store.get("paused")) return;
     const next = this.store.requests()[0];
     if (!next || next.status !== "pending") return;
     this.running = this.execute(next).finally(() => {
@@ -397,12 +400,14 @@ export class DurablePiAgent extends DurableObject<Env> {
     await this.ctx.blockConcurrencyWhile(async () => {
       if (
         !this.running &&
+        !this.workspaceBusy &&
         (!this.store.requests().length || this.store.get("paused"))
       )
         await this.ctx.storage.deleteAlarm();
     });
   }
   private async accept(input: Record<string, any>) {
+    if (this.workspaceBusy) throw new HttpError(409, "Wait for the workspace operation to finish before sending a message");
     const id = identifier(input.requestId);
     const content = text(input.text ?? "").trim();
     const mode = input.mode ?? "queue";
@@ -518,6 +523,7 @@ export class DurablePiAgent extends DurableObject<Env> {
             if (!this.store.get("deleted")) {
               if (
                 this.running ||
+                this.workspaceBusy ||
                 this.store.get("active") ||
                 this.state.vm.commandPending
               )
@@ -601,6 +607,61 @@ export class DurablePiAgent extends DurableObject<Env> {
         return json(this.store.task());
       }
       this.store.task();
+      if (
+        (request.method === "GET" &&
+          ["tree", "file", "git", "diff"].includes(action)) ||
+        (request.method === "PUT" && action === "file") ||
+        (request.method === "POST" && action === "shell")
+      ) {
+        const previous = this.workspaceTail;
+        let release!: () => void;
+        this.workspaceTail = new Promise<void>((resolve) => {
+          release = resolve;
+        });
+        await previous;
+        try {
+          if (this.running || this.state.vm.commandPending)
+            throw new HttpError(
+              409,
+              "The agent is using the sandbox. Try again when it finishes.",
+            );
+          if (request.method === "GET" && this.state.vm.state === "absent")
+            throw new HttpError(409, "The agent has not created a sandbox yet.");
+          this.workspaceBusy = true;
+          await this.arm();
+          if (action === "shell") {
+            const input = await body(request, 40_000);
+            const command = text(input.command, 32_000);
+            if (!command.trim()) throw new HttpError(400, "Enter a command");
+            if (this.state.vm.state === "absent") await this.vm.start();
+            return json(await this.vm.exec(command, "/workspace", 30_000));
+          }
+          const input =
+            request.method === "PUT" ? await body(request, 1_100_000) : {};
+          const path = text(
+            request.method === "PUT"
+              ? input.path
+              : (url.searchParams.get("path") ?? ""),
+            4096,
+          );
+          return json(
+            await readWorkspace(
+              this.vm,
+              request.method === "PUT" ? "save" : action,
+              path,
+              request.method === "PUT"
+                ? {
+                    content: text(input.content, 1_000_000),
+                    revision: text(input.revision, 256),
+                  }
+                : {},
+            ),
+          );
+        } finally {
+          this.workspaceBusy = false;
+          release();
+        }
+      }
       if (request.method === "GET") {
         if (!action || action === "state")
           return json({

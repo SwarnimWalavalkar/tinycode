@@ -108,11 +108,36 @@ Click the connection status at the bottom of the sidebar to change the **Server 
 
 The URL and name are saved in this browser. Tokens are scoped to the server and kept in this tab's session storage, surviving refresh but not closing the tab. Switching reloads the UI and clears unsent drafts; saved tasks and running work stay on their respective servers. Project and model preferences are also kept separately for each server.
 
+### Spatial workspaces
+
+Spatial workspaces are the default task interface in the main app for both local agents and the Cloudflare durable agent. The New task screen uses this interface before the first message, including workspace navigation and the shortcut cheatsheet. Its layout carries into the created task; files and terminals become available after creation. Opening a task from the sidebar uses the same interface; no test page or special URL is required. Each task opens with its chat in Workspace 1. Add a second column for files, changes, or a terminal; two columns always split the available area equally. Open files and diffs from the explorer. A full workspace replaces its focused resource column, preserving the main chat. Create neighboring workspaces in any direction, or select one in the map above the chat.
+
+Layouts are saved in this browser per server and task. Moving between workspaces preserves mounted editors, chat drafts, and terminal sessions. Closing/replacing an edited file or switching tasks checks for unsaved changes. Removing a workspace removes its views, not the task or files. Main chat and the task's single terminal are reused rather than duplicated.
+
+| Shortcut (Alt is Option on Mac) | Action |
+| --- | --- |
+| Alt + arrows | Move to a neighboring workspace |
+| Alt + Shift + arrows | Create or open a neighbor |
+| Alt + 0 | Return to main chat |
+| Alt + 1 / 2 | Focus a column |
+| Alt + N | Add or replace a column |
+| Alt + W | Create workspace menu |
+| Alt + X | Remove workspace (except Workspace 1) |
+| Alt + Shift + X | Close focused resource column |
+| Alt + M | Focus the workspace map |
+| Alt + Page Up / Down | Cycle all workspaces |
+| Alt + Enter | Focus the column input |
+| Option / Alt + Shift + / | Toggle shortcut cheatsheet (Alt + K also opens it) |
+
+Menus support arrows, Tab, Enter, and Escape. The column menu also accepts 1–4. Motion respects reduced-motion preferences.
+
+Local tasks use the existing interactive terminal. Durable-agent tasks use a command shell rooted at `/workspace`, with a 30-second command limit; it is not an interactive PTY. Workspace operations wait for other workspace operations and return a busy response while an agent turn owns the sandbox. File operations stay inside `/workspace`, enforce size limits, and use revision checks for saves. The changes view recognizes Git at `/workspace` or a single repository cloned directly beneath it. These cloud endpoints require the updated Worker; the layout itself runs locally without deployment.
+
 ### Explorer test page
 
 Run `npm run dev:web` and open `http://127.0.0.1:4737/explorer.html` to try the shared file tree and code/diff viewer with sample data. No server, authenticated harness, or model calls are needed. The page includes modified, added, and deleted files, an editable preview, and a 2,500-file sample. Sample edits stay in memory until reset or reload.
 
-This page is a development test surface. In a task, the conversation remains the main view: open the file panel beside it, select a file or change, drag the divider for more room, or expand the panel temporarily. Restoring the sidebar keeps the current preview. Closing the preview returns to compact file navigation. Both layouts use the same explorer components.
+This page is a development test surface. The main app uses the same explorer components inside workspace columns: open Files or Changes, then select a file to open its preview. Two columns split the workspace equally.
 
 ## Remote machine
 

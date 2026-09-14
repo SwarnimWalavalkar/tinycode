@@ -568,3 +568,34 @@ describe("Worker boundary", () => {
     );
   });
 });
+
+describe('workspace endpoints', () => {
+  it('serializes file operations and rejects agent sends while a shell command owns the VM', async () => {
+    const { agent } = fixture();
+    await init(agent);
+    const internalAgent = agent as any;
+    internalAgent.state.vm = { state: 'ready', lastUsedAt: null };
+    let finish!: () => void;
+    const gate = new Promise<void>(resolve => { finish = resolve; });
+    const exec = vi.fn(async () => {
+      await gate;
+      return { success: true, stdout: '[]', stderr: '', exitCode: 0 };
+    });
+    internalAgent.vm = { exec };
+    const first = agent.fetch(new Request('https://internal/tree'));
+    await vi.waitFor(() => expect(exec).toHaveBeenCalledTimes(1));
+    const second = agent.fetch(new Request('https://internal/git'));
+    const send = await agent.fetch(internal('/send', { requestId:'workspace-send', text:'hello' }));
+    expect(send.status).toBe(409);
+    expect(exec).toHaveBeenCalledTimes(1);
+    finish();
+    expect((await first).status).toBe(200);
+    expect((await second).status).toBe(200);
+    expect(exec).toHaveBeenCalledTimes(2);
+  });
+  it('does not start a missing sandbox for a read and bounds shell input', async () => {
+    const { agent } = fixture(); await init(agent);
+    expect((await agent.fetch(new Request('https://internal/tree'))).status).toBe(409);
+    expect((await agent.fetch(internal('/shell', {command:''}))).status).toBe(400);
+  });
+});

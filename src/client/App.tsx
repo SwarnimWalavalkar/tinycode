@@ -1,7 +1,5 @@
 import {
-  lazy,
   memo,
-  Suspense,
   useEffect,
   useLayoutEffect,
   useRef,
@@ -27,12 +25,10 @@ import {
   Moon,
   PanelLeftClose,
   PanelLeftOpen,
-  PanelRight,
   Plus,
   Search,
   Square,
   Sun,
-  TerminalSquare,
   X,
   ShieldCheck,
   AlertCircle,
@@ -63,8 +59,12 @@ import {
 } from "./state";
 
 import ModelPicker from "./ModelPicker";
-import { defaultPermissionMode, type PermissionMode } from "../shared/permissions";
+import {
+  defaultPermissionMode,
+  type PermissionMode,
+} from "../shared/permissions";
 import Transcript from "./Transcript";
+import SpatialWorkspace from "./SpatialWorkspace";
 import MessageQueue from "./MessageQueue";
 import { ImageShelf, useDraftImages } from "./Images";
 import { IMAGE_TYPES } from "../shared/images";
@@ -88,9 +88,6 @@ import {
 } from "./TaskNaming";
 import { ProviderMark, providerNames } from "./Harness";
 
-const Terminal = lazy(() => import("./Terminal"));
-const Files = lazy(() => import("./Files"));
-
 const fail = (error: unknown) =>
   setShell({ error: error instanceof Error ? error.message : String(error) });
 
@@ -112,7 +109,8 @@ function savedSelection(): {
       return {
         ...value,
         thinkingLevel:
-          typeof value.thinkingLevel === "string" && value.thinkingLevel.length <= 32
+          typeof value.thinkingLevel === "string" &&
+          value.thinkingLevel.length <= 32
             ? value.thinkingLevel
             : null,
       };
@@ -179,7 +177,10 @@ function SearchDialog({ onClose }: { onClose: () => void }) {
               <ProviderMark id={t.provider} />
               <span>
                 {t.title}
-                <small>{projects.find((p) => p.id === t.projectId)?.name ?? "No project"}</small>
+                <small>
+                  {projects.find((p) => p.id === t.projectId)?.name ??
+                    "No project"}
+                </small>
               </span>
               <ArrowUpRight size={15} />
             </button>
@@ -211,7 +212,9 @@ const Composer = memo(function Composer({
   const [sending, setSending] = useState(false);
   const [mode, setMode] = useState<DeliveryMode>(() => {
     try {
-      return localStorage.getItem("tinycode.deliveryMode") === "steer" ? "steer" : "queue";
+      return localStorage.getItem("tinycode.deliveryMode") === "steer"
+        ? "steer"
+        : "queue";
     } catch {
       return "queue";
     }
@@ -230,15 +233,20 @@ const Composer = memo(function Composer({
   useLayoutEffect(() => {
     if (!editing || !input.current) return;
     input.current.focus();
-    input.current.setSelectionRange(input.current.value.length, input.current.value.length);
+    input.current.setSelectionRange(
+      input.current.value.length,
+      input.current.value.length,
+    );
   }, [editing?.id]);
-  const queuedEdit = editing && queue.find((message) => message.id === editing.id);
+  const queuedEdit =
+    editing && queue.find((message) => message.id === editing.id);
   const editProblem =
     editing &&
     (!queuedEdit || queuedEdit.status === "sending"
       ? "This message has left the queue. Your edits have not been sent."
       : queuedEdit.text !== editing.text ||
-          JSON.stringify(queuedEdit.images ?? []) !== JSON.stringify(editing.images ?? [])
+          JSON.stringify(queuedEdit.images ?? []) !==
+            JSON.stringify(editing.images ?? [])
         ? "This message changed elsewhere. Cancel and reopen it to edit the latest version."
         : null);
   function finishEditing() {
@@ -315,7 +323,8 @@ const Composer = memo(function Composer({
       <div
         className={`composer-stack ${dragging ? "dragging" : ""}`}
         onDragEnter={(e) => {
-          if (!e.dataTransfer.types.includes("Files") || disabled || sending) return;
+          if (!e.dataTransfer.types.includes("Files") || disabled || sending)
+            return;
           e.preventDefault();
           dragDepth.current++;
           setDragging(true);
@@ -327,7 +336,10 @@ const Composer = memo(function Composer({
           }
         }}
         onDragLeave={(e) => {
-          if (e.dataTransfer.types.includes("Files") && --dragDepth.current <= 0) {
+          if (
+            e.dataTransfer.types.includes("Files") &&
+            --dragDepth.current <= 0
+          ) {
             dragDepth.current = 0;
             setDragging(false);
           }
@@ -337,7 +349,8 @@ const Composer = memo(function Composer({
           e.preventDefault();
           dragDepth.current = 0;
           setDragging(false);
-          if (!disabled && !sending) draft.add(Array.from(e.dataTransfer.files));
+          if (!disabled && !sending)
+            draft.add(Array.from(e.dataTransfer.files));
           input.current?.focus();
         }}
         onPaste={(e) => {
@@ -381,9 +394,7 @@ const Composer = memo(function Composer({
             ref={input}
             aria-label={task ? "Message your agent" : "Describe your task"}
             placeholder={
-              task
-                ? "Send a follow-up…"
-                : "Ask a question or describe a task…"
+              task ? "Send a follow-up…" : "Ask a question or describe a task…"
             }
             value={text}
             readOnly={sending}
@@ -393,7 +404,11 @@ const Composer = memo(function Composer({
                 e.preventDefault();
                 finishEditing();
               }
-              if (e.key === "Enter" && !e.shiftKey && !e.nativeEvent.isComposing) {
+              if (
+                e.key === "Enter" &&
+                !e.shiftKey &&
+                !e.nativeEvent.isComposing
+              ) {
                 e.preventDefault();
                 void send();
               }
@@ -415,7 +430,9 @@ const Composer = memo(function Composer({
                 {busy ? (
                   <>
                     <span className="activity-dot" />
-                    {task?.status === "waiting" ? "Waiting for you" : "Working on your task"}
+                    {task?.status === "waiting"
+                      ? "Waiting for you"
+                      : "Working on your task"}
                   </>
                 ) : (
                   <>
@@ -464,7 +481,8 @@ const Composer = memo(function Composer({
                   aria-label="Stop task"
                   disabled={disabled}
                   onClick={() => {
-                    if (task) void post(`/tasks/${task.id}/interrupt`).catch(fail);
+                    if (task)
+                      void post(`/tasks/${task.id}/interrupt`).catch(fail);
                   }}
                 >
                   <Square size={13} fill="currentColor" />
@@ -562,17 +580,33 @@ function ApprovalCard({ approval }: { approval: Approval }) {
         />
       )}
       <footer>
-        <button className="button secondary" disabled={busy} onClick={() => void respond(false)}>
+        <button
+          className="button secondary"
+          disabled={busy}
+          onClick={() => void respond(false)}
+        >
           Decline
         </button>
-        <button className="button primary" disabled={busy} onClick={() => void respond(true)}>
+        <button
+          className="button primary"
+          disabled={busy}
+          onClick={() => void respond(true)}
+        >
           {approval.input ? "Send answer" : "Allow once"}
         </button>
       </footer>
     </div>
   );
 }
-function Conversation({ task, connected }: { task: Task; connected: boolean }) {
+function Conversation({
+  task,
+  connected,
+  visible = true,
+}: {
+  task: Task;
+  connected: boolean;
+  visible?: boolean;
+}) {
   const timeline = useTimeline();
   const viewport = useRef<HTMLDivElement>(null);
   const content = useRef<HTMLDivElement>(null);
@@ -580,6 +614,7 @@ function Conversation({ task, connected }: { task: Task; connected: boolean }) {
   const [away, setAway] = useState(false);
   useEffect(() => {
     if (
+      !visible ||
       !task.attentionId ||
       !connected ||
       !timeline.ready ||
@@ -603,6 +638,7 @@ function Conversation({ task, connected }: { task: Task; connected: boolean }) {
   }, [
     task.id,
     task.attentionId,
+    visible,
     connected,
     timeline.ready,
     timeline.taskId,
@@ -637,7 +673,8 @@ function Conversation({ task, connected }: { task: Task; connected: boolean }) {
         onScroll={() => {
           const el = viewport.current;
           if (el) {
-            sticky.current = el.scrollHeight - el.scrollTop - el.clientHeight < 90;
+            sticky.current =
+              el.scrollHeight - el.scrollTop - el.clientHeight < 90;
             setAway(!sticky.current);
           }
         }}
@@ -726,7 +763,11 @@ function Conversation({ task, connected }: { task: Task; connected: boolean }) {
                 await post(`/tasks/${task.id}/thinking`, { thinkingLevel });
               }}
               taskId={task.id}
-              disabled={!connected || task.status === "running" || task.status === "waiting"}
+              disabled={
+                !connected ||
+                task.status === "running" ||
+                task.status === "waiting"
+              }
               onChange={async (_, model) => {
                 await post(`/tasks/${task.id}/model`, { model });
               }}
@@ -786,25 +827,45 @@ function Login() {
     <div className="login">
       <Mark />
       <h1>Connect to Durable Agent</h1>
-      {auth?.mode === "github" ? <>
-        <p>Connect once to start tasks and use your GitHub repositories.</p>
-        <GithubSignIn />
-        {new URLSearchParams(location.search).has("login_error") && <p className="form-error">GitHub sign-in did not complete. Please try again and allow repository access.</p>}
-      </> : auth ? <><p>Enter your access token to connect.</p>
-      <form onSubmit={(e) => void login(e)}>
-        <input
-          type="password"
-          aria-label="Access token"
-          value={token}
-          onChange={(e) => setToken(e.target.value)}
-          autoFocus
-          placeholder="Server access token"
-          disabled={busy}
-        />
-        <button className="button primary" disabled={busy}>
-          {busy ? "Checking…" : "Connect"} <ArrowUpRight size={16} />
-        </button>
-      </form></> : authError ? <p className="form-error">{authError} <button className="button" onClick={() => location.reload()}>Retry</button></p> : <p>Connecting…</p>}
+      {auth?.mode === "github" ? (
+        <>
+          <p>Connect once to start tasks and use your GitHub repositories.</p>
+          <GithubSignIn />
+          {new URLSearchParams(location.search).has("login_error") && (
+            <p className="form-error">
+              GitHub sign-in did not complete. Please try again and allow
+              repository access.
+            </p>
+          )}
+        </>
+      ) : auth ? (
+        <>
+          <p>Enter your access token to connect.</p>
+          <form onSubmit={(e) => void login(e)}>
+            <input
+              type="password"
+              aria-label="Access token"
+              value={token}
+              onChange={(e) => setToken(e.target.value)}
+              autoFocus
+              placeholder="Server access token"
+              disabled={busy}
+            />
+            <button className="button primary" disabled={busy}>
+              {busy ? "Checking…" : "Connect"} <ArrowUpRight size={16} />
+            </button>
+          </form>
+        </>
+      ) : authError ? (
+        <p className="form-error">
+          {authError}{" "}
+          <button className="button" onClick={() => location.reload()}>
+            Retry
+          </button>
+        </p>
+      ) : (
+        <p>Connecting…</p>
+      )}
       {error && <p className="form-error">{error}</p>}
       <button
         className="button"
@@ -859,9 +920,19 @@ function TaskButton({
       <span className="task-title">{task.title}</span>
       {task.worktreePath && <GitBranch size={11} className="muted" />}
       {task.status === "running" ? (
-        <LoaderCircle size={12} className="task-spinner spin" role="img" aria-label="In progress" />
+        <LoaderCircle
+          size={12}
+          className="task-spinner spin"
+          role="img"
+          aria-label="In progress"
+        />
       ) : attention ? (
-        <span className="attention-dot" role="img" aria-label={attention} title={attention} />
+        <span
+          className="attention-dot"
+          role="img"
+          aria-label={attention}
+          title={attention}
+        />
       ) : null}
     </button>
   );
@@ -869,7 +940,8 @@ function TaskButton({
 
 export function App() {
   const shell = useShell();
-  const cloudOnly = shell.providers.length === 1 && shell.providers[0].id === "cloudflare";
+  const cloudOnly =
+    shell.providers.length === 1 && shell.providers[0].id === "cloudflare";
   const createAttempt = useRef<{
     key: string;
     task: Task;
@@ -880,7 +952,9 @@ export function App() {
   const [selectedProject, setSelectedProject] = useState(
     () => localStorage.getItem(serverStorageKey("tinycode-project")) ?? "",
   );
-  const [provider, setProvider] = useState<ProviderId>(() => savedSelection().provider);
+  const [provider, setProvider] = useState<ProviderId>(
+    () => savedSelection().provider,
+  );
   const [model, setModel] = useState(() => savedSelection().model);
   const [permissionMode, setPermissionMode] = useState<PermissionMode>(
     () => defaultPermissionMode[savedSelection().provider],
@@ -897,16 +971,23 @@ export function App() {
   const [taskMenu, setTaskMenu] = useState<TaskMenuPosition | null>(null);
   const [renaming, setRenaming] = useState<TaskMenuPosition | null>(null);
   const [deleting, setDeleting] = useState<TaskMenuPosition | null>(null);
-  const [sidebar, setSidebar] = useState(() => window.matchMedia("(min-width: 621px)").matches);
-  const [files, setFiles] = useState(false);
-  const [terminal, setTerminal] = useState(false);
-  const [dark, setDark] = useState(() => localStorage.getItem("tinycode-theme") === "dark");
+  const [sidebar, setSidebar] = useState(
+    () => window.matchMedia("(min-width: 621px)").matches,
+  );
+  const [chatVisible, setChatVisible] = useState(true);
+  const [dark, setDark] = useState(
+    () => localStorage.getItem("tinycode-theme") === "dark",
+  );
   useEffect(() => {
     document.documentElement.dataset.theme = dark ? "dark" : "light";
     localStorage.setItem("tinycode-theme", dark ? "dark" : "light");
   }, [dark]);
   useEffect(() => {
-    if (shell.loaded && selectedProject && !shell.projects.some((p) => p.id === selectedProject))
+    if (
+      shell.loaded &&
+      selectedProject &&
+      !shell.projects.some((p) => p.id === selectedProject)
+    )
       setSelectedProject("");
   }, [selectedProject, shell.projects, shell.loaded]);
   useEffect(() => {
@@ -925,7 +1006,10 @@ export function App() {
     setOptions(false);
   }, [provider]);
   useEffect(() => {
-    if (shell.providers.length && !shell.providers.find((p) => p.id === provider)?.available) {
+    if (
+      shell.providers.length &&
+      !shell.providers.find((p) => p.id === provider)?.available
+    ) {
       const available = shell.providers.find((p) => p.available);
       if (available) {
         setProvider(available.id);
@@ -941,19 +1025,19 @@ export function App() {
         e.preventDefault();
         setSearch((s) => !s);
       }
-      if ((e.metaKey || e.ctrlKey) && e.key === "j") {
-        e.preventDefault();
-        const state = getShell();
-        const active = state.tasks.find((candidate) => candidate.id === state.activeTaskId);
-        if (active && active.provider !== "cloudflare") setTerminal((s) => !s);
-      }
       if (e.key === "Escape") setShell({ error: null });
     }
     window.addEventListener("keydown", shortcut);
     return () => window.removeEventListener("keydown", shortcut);
   }, []);
   const project = shell.projects.find(
-    (p) => p.id === (task ? task.projectId : provider === "cloudflare" ? null : selectedProject),
+    (p) =>
+      p.id ===
+      (task
+        ? task.projectId
+        : provider === "cloudflare"
+          ? null
+          : selectedProject),
   );
   const projectlessTasks = shell.tasks.filter((t) => t.projectId === null);
   useEffect(() => {
@@ -967,7 +1051,8 @@ export function App() {
   const available = shell.providers.find((p) => p.id === provider)?.available;
   async function create(text: string, images: string[]) {
     const useWorktree = project?.isGit && worktree;
-    if (useWorktree && !branch.trim()) throw new Error("Name the branch for your new worktree");
+    if (useWorktree && !branch.trim())
+      throw new Error("Name the branch for your new worktree");
     const key = JSON.stringify([
       text,
       images,
@@ -1004,6 +1089,18 @@ export function App() {
       images,
       requestId: attempt.requestId,
     });
+    try {
+      const draftKey = serverStorageKey("tinycode-spatial:draft");
+      const layout = localStorage.getItem(draftKey);
+      if (layout)
+        localStorage.setItem(
+          serverStorageKey(`tinycode-spatial:${attempt.task.id}`),
+          layout,
+        );
+      localStorage.removeItem(draftKey);
+    } catch {
+      // Task creation still succeeds when browser storage is unavailable.
+    }
     selectTask(attempt.task.id);
     createAttempt.current = null;
     createRequest.current = null;
@@ -1027,7 +1124,11 @@ export function App() {
       {sidebar && (
         <aside className="sidebar">
           <div className="brand">
-            <button className="brand-home" onClick={() => newTask()} aria-label="Tinycode home">
+            <button
+              className="brand-home"
+              onClick={() => newTask()}
+              aria-label="Tinycode home"
+            >
               <Mark small />
               <strong>tinycode</strong>
               <span>alpha</span>
@@ -1132,17 +1233,29 @@ export function App() {
                 title={connection.url}
                 aria-haspopup="dialog"
               >
-                {cloudOnly ? <Cloud size={15} /> : isLocalServer() ? <Monitor size={15} /> : <Globe2 size={15} />}
+                {cloudOnly ? (
+                  <Cloud size={15} />
+                ) : isLocalServer() ? (
+                  <Monitor size={15} />
+                ) : (
+                  <Globe2 size={15} />
+                )}
                 <div>
                   <strong>{connectionLabel(cloudOnly)}</strong>
                   <span role="status">
                     <i className={shell.connected ? "online" : "offline"} />
-                    {shell.connected ? "Connected" : shell.loaded ? "Disconnected" : "Connecting…"}
+                    {shell.connected
+                      ? "Connected"
+                      : shell.loaded
+                        ? "Disconnected"
+                        : "Connecting…"}
                   </span>
                 </div>
               </button>
               <button
-                aria-label={dark ? "Switch to light theme" : "Switch to dark theme"}
+                aria-label={
+                  dark ? "Switch to light theme" : "Switch to dark theme"
+                }
                 className="icon-button"
                 onClick={() => setDark((d) => !d)}
               >
@@ -1175,170 +1288,147 @@ export function App() {
                   <Status status={task.status} />
                   {task.status}
                 </span>
-                {task.provider !== "cloudflare" && (
-                  <>
-                    <span className="divider" />
-                    <button
-                      className={`icon-button ${terminal ? "pressed" : ""}`}
-                      title="Toggle terminal · ⌘J"
-                      aria-label="Toggle terminal"
-                      onClick={() => setTerminal((v) => !v)}
-                    >
-                      <TerminalSquare size={17} />
-                    </button>
-                    <button
-                      className={`icon-button ${files ? "pressed" : ""}`}
-                      title="Files and changes"
-                      aria-label="Toggle files"
-                      onClick={() => setFiles((v) => !v)}
-                    >
-                      <PanelRight size={17} />
-                    </button>
-                  </>
-                )}
               </>
             )}
           </div>
         </header>
         <div className="work-area">
-          <div className="center-pane">
-            <div className="task-pane">
-              {task ? (
-                <Conversation task={task} connected={shell.connected} />
-              ) : (
-                <div className="welcome">
-                  <div className="welcome-prompt">
-                    <h1>What would you like to work on?</h1>
-                  </div>
-                  <div className="welcome-dock">
-                    <div
-                      className={`workspace-controls ${provider === "cloudflare" || cloudOnly ? "cloud-runtime" : ""}`}
-                    >
-                      {provider === "cloudflare" || cloudOnly ? (
-                        <>
-                          <span className="cloud-runtime-mark">
-                            <Cloud size={14} />
-                          </span>
-                          <span>
-                            <strong>Durable agent</strong>
-                            <small>Runs in a Durable Object. Starts a Linux sandbox when needed.</small>
-                          </span>
-                        </>
-                      ) : (
-                        <>
-                          <button
-                            className="workspace-selector"
-                            aria-expanded={options}
-                            onClick={() => setOptions((o) => !o)}
-                          >
-                            <Folder size={14} />
-                            {project?.name ?? "No project"}
-                            <ChevronDown size={12} />
-                          </button>
-                          {project?.isGit && (
-                            <>
-                              <span className="controls-dot">/</span>
-                              <button
-                                className="workspace-selector"
-                                onClick={() => setOptions((o) => !o)}
-                              >
-                                <GitBranch size={13} />
-                                {worktree ? "New worktree" : "Current checkout"}
-                                <ChevronDown size={12} />
-                              </button>
-                            </>
-                          )}
-                        </>
-                      )}
+          <SpatialWorkspace
+            key={task?.id ?? "draft"}
+            task={task}
+            connected={shell.connected}
+            theme={dark ? "dark" : "light"}
+            workspaceName={project?.name ?? "Workspace"}
+            onVisibleChange={setChatVisible}
+          >
+            {task ? (
+              <Conversation
+                task={task}
+                connected={shell.connected}
+                visible={chatVisible}
+              />
+            ) : (
+              <div className="center-pane">
+                <div className="task-pane">
+                  <div className="welcome">
+                    <div className="welcome-prompt">
+                      <h1>What would you like to work on?</h1>
                     </div>
-                    {options && provider !== "cloudflare" && (
-                      <div className="task-options">
-                        <label>
-                          Project
-                          <select
-                            aria-label="Project"
-                            value={selectedProject}
-                            onChange={(e) => chooseProject(e.target.value)}
-                          >
-                            <option value="">No project</option>
-                            {shell.projects.map((p) => (
-                              <option value={p.id} key={p.id}>
-                                {p.name}
-                              </option>
-                            ))}
-                          </select>
-                        </label>
-                        {project?.isGit && (
-                          <label className="checkbox-label">
-                            <input
-                              type="checkbox"
-                              checked={worktree}
-                              onChange={(e) => setWorktree(e.target.checked)}
-                            />
-                            Start in a new worktree
-                          </label>
-                        )}
-                        {project?.isGit && worktree && (
-                          <label>
-                            New branch
-                            <input
-                              aria-label="New branch"
-                              value={branch}
-                              onChange={(e) => setBranch(e.target.value)}
-                              placeholder="feature/my-idea"
-                            />
-                          </label>
+                    <div className="welcome-dock">
+                      <div
+                        className={`workspace-controls ${provider === "cloudflare" || cloudOnly ? "cloud-runtime" : ""}`}
+                      >
+                        {provider === "cloudflare" || cloudOnly ? (
+                          <>
+                            <span className="cloud-runtime-mark">
+                              <Cloud size={14} />
+                            </span>
+                            <span>
+                              <strong>Durable agent</strong>
+                              <small>
+                                Runs in a Durable Object. Starts a Linux sandbox
+                                when needed.
+                              </small>
+                            </span>
+                          </>
+                        ) : (
+                          <>
+                            <button
+                              className="workspace-selector"
+                              aria-expanded={options}
+                              onClick={() => setOptions((o) => !o)}
+                            >
+                              <Folder size={14} />
+                              {project?.name ?? "No project"}
+                              <ChevronDown size={12} />
+                            </button>
+                            {project?.isGit && (
+                              <>
+                                <span className="controls-dot">/</span>
+                                <button
+                                  className="workspace-selector"
+                                  onClick={() => setOptions((o) => !o)}
+                                >
+                                  <GitBranch size={13} />
+                                  {worktree
+                                    ? "New worktree"
+                                    : "Current checkout"}
+                                  <ChevronDown size={12} />
+                                </button>
+                              </>
+                            )}
+                          </>
                         )}
                       </div>
-                    )}
-                    <Composer
-                      onCreate={create}
-                      disabled={!shell.connected || !available || !model}
-                      controls={
-                        <ModelPicker
-                          provider={provider}
-                          model={model}
-                          thinkingLevel={thinkingLevel}
-                          permissionMode={permissionMode}
-                          onPermissionsChange={setPermissionMode}
-                          disabled={!shell.connected}
-                          onThinkingChange={setThinkingLevel}
-                          projectId={project?.id}
-                          onChange={(id, model) => {
-                            if (id !== provider) setPermissionMode(defaultPermissionMode[id]);
-                            setProvider(id);
-                            setModel(model);
-                            setThinkingLevel(null);
-                          }}
-                        />
-                      }
-                    />
+                      {options && provider !== "cloudflare" && (
+                        <div className="task-options">
+                          <label>
+                            Project
+                            <select
+                              aria-label="Project"
+                              value={selectedProject}
+                              onChange={(e) => chooseProject(e.target.value)}
+                            >
+                              <option value="">No project</option>
+                              {shell.projects.map((p) => (
+                                <option value={p.id} key={p.id}>
+                                  {p.name}
+                                </option>
+                              ))}
+                            </select>
+                          </label>
+                          {project?.isGit && (
+                            <label className="checkbox-label">
+                              <input
+                                type="checkbox"
+                                checked={worktree}
+                                onChange={(e) => setWorktree(e.target.checked)}
+                              />
+                              Start in a new worktree
+                            </label>
+                          )}
+                          {project?.isGit && worktree && (
+                            <label>
+                              New branch
+                              <input
+                                aria-label="New branch"
+                                value={branch}
+                                onChange={(e) => setBranch(e.target.value)}
+                                placeholder="feature/my-idea"
+                              />
+                            </label>
+                          )}
+                        </div>
+                      )}
+                      <Composer
+                        onCreate={create}
+                        disabled={!shell.connected || !available || !model}
+                        controls={
+                          <ModelPicker
+                            provider={provider}
+                            model={model}
+                            thinkingLevel={thinkingLevel}
+                            permissionMode={permissionMode}
+                            onPermissionsChange={setPermissionMode}
+                            disabled={!shell.connected}
+                            onThinkingChange={setThinkingLevel}
+                            projectId={project?.id}
+                            onChange={(id, model) => {
+                              if (id !== provider)
+                                setPermissionMode(defaultPermissionMode[id]);
+                              setProvider(id);
+                              setModel(model);
+                              setThinkingLevel(null);
+                            }}
+                          />
+                        }
+                      />
+                    </div>
                   </div>
                 </div>
-              )}
-            </div>
-            {task && task.provider !== "cloudflare" && terminal && (
-              <Suspense fallback={<div className="panel-loading">Opening terminal…</div>}>
-                <Terminal
-                  key={task.id}
-                  taskId={task.id}
-                  connected={shell.connected}
-                  onHide={() => setTerminal(false)}
-                />
-              </Suspense>
+              </div>
             )}
-          </div>
-          {task && task.provider !== "cloudflare" && files && (
-            <Suspense fallback={<div className="panel-loading">Opening files…</div>}>
-              <Files
-                key={task.id}
-                theme={dark ? "dark" : "light"}
-                taskId={task.id}
-                workspaceName={project?.name ?? "Recents"}
-                onClose={() => setFiles(false)}
-              />
-            </Suspense>
-          )}
+          </SpatialWorkspace>
         </div>
       </main>
       {shell.error && !shell.authRequired && (
@@ -1355,9 +1445,14 @@ export function App() {
         </div>
       )}
       {projectDialog && (
-        <ProjectDialog onClose={() => setProjectDialog(false)} onAdd={(p) => newTask(p.id)} />
+        <ProjectDialog
+          onClose={() => setProjectDialog(false)}
+          onAdd={(p) => newTask(p.id)}
+        />
       )}{" "}
-      {connectionDialog && <ConnectionDialog onClose={() => setConnectionDialog(false)} />}
+      {connectionDialog && (
+        <ConnectionDialog onClose={() => setConnectionDialog(false)} />
+      )}
       {taskMenu && (
         <TaskContextMenu
           position={taskMenu}
