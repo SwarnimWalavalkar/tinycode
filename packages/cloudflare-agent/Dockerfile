@@ -14,3 +14,8 @@ COPY terminal.zshrc /etc/zsh/zshrc
 COPY terminal_test.py /tmp/terminal_test.py
 RUN python3 -m unittest discover -s /tmp -p terminal_test.py -v \
     && rm -f /tmp/terminal_test.py
+
+COPY workspace_server.py /usr/local/lib/workspace_server.py
+COPY workspace_server_test.py /tmp/workspace_server_test.py
+RUN python3 -m unittest discover -s /tmp -p workspace_server_test.py -v \
+    && rm -f /tmp/workspace_server_test.py

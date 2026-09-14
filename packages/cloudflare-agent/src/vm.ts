@@ -207,6 +207,15 @@ export class CloudflareSandboxVm implements VmRuntime {
     return result;
   }
 
+  async readWorkspace(action: "tree" | "file", path: string) {
+    this.assertAvailable();
+    if (this.readSnapshot().state !== "ready")
+      throw new Error("The agent has not created a sandbox yet.");
+    const response = await this.sandbox().readWorkspace(action, path);
+    this.used("ready");
+    return response;
+  }
+
   // Explorer operations only access local files; they do not need GitHub credentials.
   async execWorkspace(command: string, cwd: string, timeout: number) {
     this.assertAvailable();

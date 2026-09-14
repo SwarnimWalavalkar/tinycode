@@ -661,6 +661,8 @@ export class DurablePiAgent extends DurableObject<Env> {
               : (url.searchParams.get("path") ?? ""),
             4096,
           );
+          if (request.method === "GET" && (action === "tree" || action === "file"))
+            return await this.vm.readWorkspace(action, path);
           return json(
             await readWorkspace(
               { exec: this.vm.execWorkspace.bind(this.vm) },

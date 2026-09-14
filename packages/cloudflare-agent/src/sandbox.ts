@@ -17,6 +17,28 @@ export class Sandbox extends CloudflareSandbox<Env> {
     const result = await session.exec("python3 /usr/local/lib/tinycode-terminal.py ensure", { env, timeout: 10_000 });
     if (!result.success) throw new Error("Terminal service failed to start");
   }
+  private workspaceStartup?: Promise<void>;
+  async readWorkspace(action: "tree" | "file", path: string) {
+    const started = Date.now();
+    const response = await this.fetchWorkspace(action, path);
+    console.info({ event: "workspace.read", action, durationMs: Date.now() - started, status: response.status });
+    return response;
+  }
+  private async fetchWorkspace(action: "tree" | "file", path: string) {
+    const request = () => new Request(`http://localhost/${action}?path=${encodeURIComponent(path)}`);
+    try {
+      const response = await this.containerFetch(request(), 3002);
+      if (response.status < 500) return response;
+    } catch { /* The service is started lazily after container startup or sleep. */ }
+    if (!this.workspaceStartup) {
+      this.workspaceStartup = (async () => {
+        const result = await this.exec("python3 /usr/local/lib/workspace_server.py ensure", { timeout: 10_000 });
+        if (!result.success) throw new Error("Workspace service failed to start");
+      })().finally(() => { this.workspaceStartup = undefined; });
+    }
+    await this.workspaceStartup;
+    return this.containerFetch(request(), 3002);
+  }
   override async fetch(request: Request) {
     if (new URL(request.url).pathname === "/tinycode-terminal")
       return this.containerFetch(new Request("http://localhost/terminal", request), 3001);
