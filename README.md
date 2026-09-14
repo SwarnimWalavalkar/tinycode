@@ -287,3 +287,11 @@ Report reproducible bugs with the Tinycode commit, server OS, browser, and harne
 ## License
 
 [MIT](LICENSE). Fonts, harness logos, and dependencies retain their own terms; see [third-party notices](THIRD_PARTY_NOTICES.md).
+
+## Canvas columns
+
+Open **Add or replace column** (`Alt N`) and choose **New canvas** (`5`) for an Excalidraw board with drawing, text, shapes, arrows, and image uploads. Create multiple boards and reopen them from **Saved canvases** in the same menu. Closing or replacing a column, or removing its workspace, keeps its board in that task's saved canvas list. Draft boards remain with the new-task layout.
+
+Boards and uploaded assets are saved in this browser's IndexedDB, scoped to the connected server and board. They survive refreshes but are not stored in the project, sent to the agent, or synced across devices. Clearing browser storage removes them. The canvas follows Tinycode's light/dark theme and loads only when opened.
+
+Excalidraw is [MIT-licensed](https://github.com/excalidraw/excalidraw/blob/master/LICENSE) and requires no license key, including in production. Use its canvas menu to import/export `.excalidraw` files or export images. Boards from the earlier tldraw prototype are not converted; their browser data remains untouched in the old tldraw database.

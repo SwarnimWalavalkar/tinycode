@@ -312,3 +312,23 @@
   padding: 20px;
   text-align: center;
 }
+
+.canvas-column {
+  display: flex;
+  flex-direction: column;
+  flex: 1;
+  min-height: 0;
+  min-width: 0;
+}
+.canvas-storage-note,
+.spatial-menu-label {
+  padding: 8px 12px;
+  font-size: 11px;
+  color: var(--quiet);
+}
+.canvas-editor {
+  flex: 1;
+  position: relative;
+  min-height: 0;
+  isolation: isolate;
+}

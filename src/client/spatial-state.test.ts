@@ -39,3 +39,20 @@ describe("spatial layout", () => {
     expect(restoreSpatial(JSON.stringify(s))).toEqual(initialSpatial());
   });
 });
+
+describe("canvas layouts", () => {
+  it("restores separate canvases and retains closed boards in the catalog", () => {
+    const s = moveSpatial(initialSpatial(), 1, 0, true);
+    s.canvases = [{ id: "a", name: "Canvas 1" }, { id: "b", name: "Canvas 2" }];
+    s.spaces[1].columns = [{ id: "a", kind: "canvas" }, { id: "b", kind: "canvas" }];
+    expect(restoreSpatial(JSON.stringify(s))).toEqual(s);
+    s.spaces[1].columns = [];
+    expect(restoreSpatial(JSON.stringify(s)).canvases).toEqual(s.canvases);
+  });
+  it("rejects malformed or duplicate saved canvas entries", () => {
+    const s = initialSpatial();
+    s.canvases = [{ id: "a", name: "Canvas 1" }, { id: "a", name: "Canvas 2" }];
+    expect(restoreSpatial(JSON.stringify(s))).toEqual(initialSpatial());
+    expect(restoreSpatial(JSON.stringify({ ...s, canvases: [null] }))).toEqual(initialSpatial());
+  });
+});

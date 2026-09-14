@@ -27,6 +27,7 @@ import {
   type SpatialPanel,
 } from "./spatial-state";
 import "./spatial.css";
+const Canvas = lazy(() => import("./Canvas"));
 const Files = lazy(() => import("./Files"));
 const Terminal = lazy(() => import("./Terminal"));
 const CloudShell = lazy(() => import("./CloudShell"));
@@ -41,6 +42,7 @@ const options = [
   { kind: "changes", label: "Changes" },
   { kind: "terminal", label: "Terminal" },
   { kind: "chat", label: "Main chat" },
+  { kind: "canvas", label: "New canvas" },
 ] as const;
 export default function SpatialWorkspace({
   task,
@@ -172,10 +174,10 @@ export default function SpatialWorkspace({
     setState(removeSpatial);
     setMenu(null);
   }
-  function open(kind: SpatialPanel["kind"], path?: string) {
+  function open(kind: SpatialPanel["kind"], path?: string, canvasId?: string) {
     const existing = state.spaces
       .flatMap((w) => w.columns.map((p, i) => ({ w, p, i })))
-      .find(({ p }) => p.kind === kind && p.path === path);
+      .find(({ p }) => kind === "canvas" ? p.id === canvasId : p.kind === kind && p.path === path);
     if (existing) {
       select(existing.w.id, existing.i);
       return;
@@ -188,12 +190,15 @@ export default function SpatialWorkspace({
         : -1;
     if (replace >= 0 && !guard([current.columns[replace].id])) return;
     const panel: SpatialPanel = {
-      id: crypto.randomUUID(),
+      id: canvasId ?? crypto.randomUUID(),
       kind,
       ...(path ? { path } : {}),
     };
     setState((s) => ({
       ...s,
+      ...(kind === "canvas" && !canvasId ? {
+        canvases: [...(s.canvases ?? []), { id: panel.id, name: `Canvas ${(s.canvases?.length ?? 0) + 1}` }],
+      } : {}),
       focus: replace >= 0 ? replace : current.columns.length,
       spaces: s.spaces.map((w) =>
         w.id !== s.active
@@ -257,7 +262,7 @@ export default function SpatialWorkspace({
           ].focus();
           return;
         }
-        if (menu === "column" && /^[1-4]$/.test(e.key)) {
+        if (menu === "column" && /^[1-5]$/.test(e.key)) {
           e.preventDefault();
           open(options[Number(e.key) - 1].kind);
           return;
@@ -448,6 +453,7 @@ export default function SpatialWorkspace({
                         terminal: "Terminal",
                         file: "File",
                         diff: "Diff",
+                        canvas: state.canvases?.find((c) => c.id === p.id)?.name ?? "Canvas",
                       }[p.kind]}
                   </span>
                   {p.kind !== "chat" && (
@@ -462,6 +468,18 @@ export default function SpatialWorkspace({
                 </div>
                 {p.kind === "chat" ? (
                   children
+                ) : p.kind === "canvas" ? (
+                  <Suspense fallback={<div className="panel-loading">Opening canvas…</div>}>
+                    <Canvas
+                      persistenceKey={serverStorageKey(`tinycode-canvas:${p.id}`)}
+                      theme={theme}
+                      active={w.id === state.active && i === state.focus && !menu}
+                      registerGuard={(fn) => {
+                        if (fn) guards.current.set(p.id, fn);
+                        else guards.current.delete(p.id);
+                      }}
+                    />
+                  </Suspense>
                 ) : !task ? (
                   <div className="spatial-empty">
                     <p className="spatial-pending">
@@ -539,12 +557,20 @@ export default function SpatialWorkspace({
             <X size={14} />
           </button>
           {menu === "column" ? (
-            options.map((o, i) => (
+            <>
+            {options.map((o, i) => (
               <button key={o.kind} onClick={() => open(o.kind)}>
                 {o.label}
                 <kbd>{i + 1}</kbd>
               </button>
-            ))
+            ))}
+            {!!state.canvases?.length && <div className="spatial-menu-label">Saved canvases</div>}
+            {state.canvases?.map((canvas) => (
+              <button key={canvas.id} onClick={() => open("canvas", undefined, canvas.id)}>
+                {canvas.name}
+              </button>
+            ))}
+            </>
           ) : menu === "workspace" ? (
             directions.map((d) => (
               <button

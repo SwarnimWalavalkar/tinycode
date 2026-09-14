@@ -1,6 +1,6 @@
 export type SpatialPanel = {
   id: string;
-  kind: "chat" | "files" | "changes" | "file" | "diff" | "terminal";
+  kind: "chat" | "files" | "changes" | "file" | "diff" | "terminal" | "canvas";
   path?: string;
 };
 export type SpatialSpace = {
@@ -15,6 +15,7 @@ export type SpatialState = {
   active: string;
   focus: number;
   next: number;
+  canvases?: { id: string; name: string }[];
 };
 export const initialSpatial = (): SpatialState => ({
   spaces: [
@@ -66,7 +67,7 @@ export function restoreSpatial(raw: string | null): SpatialState {
           !p ||
           typeof p.id !== "string" ||
           panels.has(p.id) ||
-          !["chat", "files", "changes", "file", "diff", "terminal"].includes(p.kind) ||
+          !["chat", "files", "changes", "file", "diff", "terminal", "canvas"].includes(p.kind) ||
           (["file", "diff"].includes(p.kind) && (typeof p.path !== "string" || !p.path))
         )
           return initialSpatial();
@@ -75,6 +76,11 @@ export function restoreSpatial(raw: string | null): SpatialState {
         if (p.kind === "terminal") terminals++;
       }
     }
+    if (s.canvases !== undefined && (
+      !Array.isArray(s.canvases) ||
+      s.canvases.some((c) => !c || typeof c.id !== "string" || !c.id || typeof c.name !== "string" || !c.name) ||
+      new Set(s.canvases.map((c) => c.id)).size !== s.canvases.length
+    )) return initialSpatial();
     const home = s.spaces.find((w) => w.id === "home");
     if (
       !home ||
