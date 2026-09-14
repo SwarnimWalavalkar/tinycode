@@ -288,7 +288,9 @@ File operations support UTF-8 text up to 1 MB, return bounded results, and resol
 paths and symlinks inside `/workspace`. Each edit call has a 40 KB encoded-JSON
 input budget; split larger edits across calls. All four tools execute sequentially.
 
-A Sandbox starts lazily,
+The agent must call `vm_manage` with `action: "start"` before using a file or shell
+tool. Calls before startup return an error directing it to start the sandbox.
+A started Sandbox runs
 with Node, Git, Python 3, pip, and venv available in the image. Its stable sandbox name encodes
 the full Durable Object identity in base36 to fit the Sandbox SDK's 63-character limit.
 It sleeps after ten idle minutes, and can be removed explicitly. Its filesystem is **ephemeral**
@@ -364,9 +366,9 @@ Create a new Cloudflare task with GLM 5.3 Flash, then work through this checklis
 
 1. **Inference:** send `Reply with LOCAL_AGENT_OK without using any tools.` Expect streamed
    text and a completed turn. This proves actual gateway access, unlike the readiness check.
-2. **Sandbox:** send `Use shell to run python3 -c 'import platform; print(platform.system()); print(6*7)'. Report the actual output.`
+2. **Sandbox:** send `Use vm_manage with action start, then shell to run python3 -c 'import platform; print(platform.system()); print(6*7)'. Report the actual output.`
    Expect visible tool calls, Linux, and 42. First startup can take longer while Docker builds/starts.
-3. **Filesystem within a running sandbox:** ask it to create `/tmp/tinycode-e2e.txt` with
+3. **Filesystem within a running sandbox:** ask it to use `file_write` to create `/workspace/tinycode-e2e.txt` with
    `SANDBOX_OK`, then read it in a separate tool call. Expect the same content; this does
    not establish persistence across sandbox destruction or sleep.
 4. **Browser disconnect:** ask it to run `sleep 20; echo DETACHED_OK` through `shell`.

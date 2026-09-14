@@ -110,14 +110,35 @@ describe("Cloudflare Sandbox VM", () => {
     for (const id of ["first-sandbox", "next-sandbox"]) {
       let snapshot: VmSnapshot = { state: "absent", lastUsedAt: null };
       const vm = new CloudflareSandboxVm(env, id, () => snapshot, (next) => { snapshot = next; }, () => "github-1");
+      await vm.start();
       await vm.exec("git clone https://github.com/alice/private.git", "/workspace", 30_000);
       await vm.exec("git status", "/workspace", 30_000);
     }
-    expect(sandbox.bindGithub).toHaveBeenCalledTimes(4);
+    expect(sandbox.bindGithub).toHaveBeenCalledTimes(6);
     expect(profile).toHaveBeenCalledTimes(2);
     for (const [, options] of sandbox.exec.mock.calls) {
       expect(options.env).toMatchObject({ GH_TOKEN: "TINYCODE_GITHUB_CREDENTIAL", GIT_AUTHOR_EMAIL: "1+alice@users.noreply.github.com", GIT_TERMINAL_PROMPT: "0" });
     }
+  });
+
+  it("rejects all sandbox tools before explicit start without making a sandbox RPC", async () => {
+    const { vm } = fixture({ state: "absent", lastUsedAt: null });
+    const tools = createVmTools(vm);
+    for (const [name, input] of [
+      ["shell", { command: "pwd" }],
+      ["file_read", { path: "example.txt" }],
+      ["file_write", { path: "example.txt", mode: "write", content: "hello" }],
+    ] as const) {
+      await expect(tools.find(tool => tool.name === name)!.execute("call", input, undefined as never))
+        .rejects.toThrow('Call vm_manage with action: "start"');
+    }
+    expect(sandbox.exec).not.toHaveBeenCalled();
+    expect(sandbox.bindGithub).not.toHaveBeenCalled();
+    sandbox.exec.mockResolvedValue(result(0, "started"));
+    await tools.find(tool => tool.name === "vm_manage")!.execute("start", { action: "start" }, undefined as never);
+    await expect(tools.find(tool => tool.name === "shell")!.execute("call", { command: "pwd" }, undefined as never))
+      .resolves.toBeDefined();
+    expect(sandbox.exec).toHaveBeenCalledTimes(2);
   });
 
   it("does not report ready when workspace preparation fails", async () => {
@@ -136,7 +157,7 @@ describe("Cloudflare Sandbox VM", () => {
           })
         : new Promise(() => {}),
     );
-    const { vm } = fixture({ state: "absent", lastUsedAt: null });
+    const { vm } = fixture({ state: "ready", lastUsedAt: null });
     const controller = new AbortController();
     const failed = expect(
       vm.exec("long-command", "/workspace", 30_000, controller.signal),
@@ -154,11 +175,11 @@ describe("Cloudflare Sandbox VM", () => {
     expect(acknowledged).toBe(true);
   });
 
-  it("cancels even while lazy startup has not returned", async () => {
+  it("cancels even while the sandbox RPC has not returned", async () => {
     sandbox.exec.mockImplementation((command: string) =>
       command.includes(" stop ") ? Promise.resolve({ success: true }) : new Promise(() => {}),
     );
-    const { vm, snapshot } = fixture({ state: "absent", lastUsedAt: null });
+    const { vm, snapshot } = fixture({ state: "ready", lastUsedAt: null });
     await expect(vm.exec("long-command", "/workspace", 10)).rejects.toThrow(
       "timed out after 10 ms",
     );
@@ -168,7 +189,7 @@ describe("Cloudflare Sandbox VM", () => {
 
   it("does not cancel a completed command", async () => {
     sandbox.exec.mockResolvedValue(result(0, "done"));
-    const { vm } = fixture({ state: "absent", lastUsedAt: null });
+    const { vm } = fixture({ state: "ready", lastUsedAt: null });
     const controller = new AbortController();
     await expect(
       vm.exec("quick-command", "/workspace", 30_000, controller.signal),

@@ -173,6 +173,9 @@ export class CloudflareSandboxVm implements VmRuntime {
   }
 
   async exec(command: string, cwd: string, timeout: number, signal?: AbortSignal) {
+    this.assertAvailable();
+    if (this.readSnapshot().state !== "ready")
+      throw new Error('Sandbox has not been started. Call vm_manage with action: "start" before using shell, file_read, or file_write.');
     const result = await this.run(command, cwd, timeout, signal);
     this.used("ready");
     return result;

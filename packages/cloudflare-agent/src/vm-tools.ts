@@ -55,7 +55,7 @@ export function createVmTools(vm: VmRuntime): AgentTool<any>[] {
       name: "vm_manage",
       label: "Manage Linux VM",
       description:
-        "Manage this task's Linux sandbox: start, status (last known snapshot, not live health), or destroy. File and shell tools start it automatically. Files are lost after idle sleep. Destroy is permanent; use only with user permission and when its files are no longer needed. Sandbox identity is managed by the runtime.",
+        "Manage this task's Linux sandbox: start, status (last known snapshot, not live health), or destroy. Call start before using any file or shell tool. Files are lost after idle sleep. Destroy is permanent; use only with user permission and when its files are no longer needed. Sandbox identity is managed by the runtime.",
       parameters: Type.Object({ action: Type.Union([Type.Literal("start"), Type.Literal("status"), Type.Literal("destroy")]) }),
       executionMode: "sequential",
       execute: async (_id, input, signal) => {
@@ -72,7 +72,7 @@ export function createVmTools(vm: VmRuntime): AgentTool<any>[] {
       name: "shell",
       label: "Run in Linux VM",
       description:
-        "Run a shell command in this agent's isolated Linux sandbox. Starting the VM is automatic when needed. For GitHub accounts, git and gh are already authenticated as the user; use normal HTTPS clone/push and gh pr create commands. Never request or print credentials. Git author identity is configured automatically. After an interrupted push or PR creation, inspect remote state before retrying.",
+        "Run a shell command in this agent's isolated Linux sandbox. Requires vm_manage with action start first. For GitHub accounts, git and gh are already authenticated as the user; use normal HTTPS clone/push and gh pr create commands. Never request or print credentials. Git author identity is configured automatically. After an interrupted push or PR creation, inspect remote state before retrying.",
       parameters: Type.Object({
         command: Type.String({ minLength: 1, maxLength: 32_000 }),
         cwd: Type.Optional(Type.String({ minLength: 1, maxLength: 1_024 })),
@@ -90,7 +90,7 @@ export function createVmTools(vm: VmRuntime): AgentTool<any>[] {
     {
       name: "file_read",
       label: "Read file",
-      description: "Read a UTF-8 text file in /workspace. Paths may be workspace-relative or absolute. Starts the VM automatically. Returns up to 200 lines by default and 16 KiB, with a revision and nextOffset for continuation. Use shell for binary files or lines exceeding the byte limit.",
+      description: "Read a UTF-8 text file in /workspace. Paths may be workspace-relative or absolute. Requires vm_manage with action start first. Returns up to 200 lines by default and 16 KiB, with a revision and nextOffset for continuation. Use shell for binary files or lines exceeding the byte limit.",
       parameters: Type.Object({
         path: Type.String({ minLength: 1, maxLength: 4096 }),
         offset: Type.Optional(Type.Integer({ minimum: 1 })),
@@ -102,7 +102,7 @@ export function createVmTools(vm: VmRuntime): AgentTool<any>[] {
     {
       name: "file_write",
       label: "Write file",
-      description: "Create or edit UTF-8 files in /workspace. Starts the VM automatically. Default replace mode applies edits against the original file: each oldText must match exactly once, and edits must not overlap. All edits are validated before an atomic save. Use mode write with content to create or completely overwrite a file (parent directories are created). Optionally supply the revision from file_read to reject stale edits. Returns a bounded diff. Paths may be workspace-relative or absolute.",
+      description: "Create or edit UTF-8 files in /workspace. Requires vm_manage with action start first. Default replace mode applies edits against the original file: each oldText must match exactly once, and edits must not overlap. All edits are validated before an atomic save. Use mode write with content to create or completely overwrite a file (parent directories are created). Optionally supply the revision from file_read to reject stale edits. Returns a bounded diff. Paths may be workspace-relative or absolute.",
       parameters: Type.Object({
         path: Type.String({ minLength: 1, maxLength: 4096 }),
         mode: Type.Optional(Type.Union([Type.Literal("replace"), Type.Literal("write")])),
