@@ -581,7 +581,7 @@ describe('workspace endpoints', () => {
       await gate;
       return { success: true, stdout: '[]', stderr: '', exitCode: 0 };
     });
-    internalAgent.vm = { exec };
+    internalAgent.vm = { execWorkspace: exec };
     const first = agent.fetch(new Request('https://internal/tree'));
     await vi.waitFor(() => expect(exec).toHaveBeenCalledTimes(1));
     const second = agent.fetch(new Request('https://internal/git'));

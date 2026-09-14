@@ -82,6 +82,26 @@ describe("Cloudflare Sandbox VM", () => {
   beforeEach(() => {
     vi.resetAllMocks();
   });
+  it("loads explorer files without GitHub setup while retaining command tracking", async () => {
+    let snapshot: VmSnapshot = { state: "ready", lastUsedAt: null };
+    const snapshots: VmSnapshot[] = [];
+    const vm = new CloudflareSandboxVm(
+      { SANDBOX: {} } as unknown as Env, "agent-1", () => snapshot,
+      next => { snapshot = next; snapshots.push(next); }, () => "github-1",
+    );
+    sandbox.exec.mockResolvedValue({ success: true, stderr: "", stdout: JSON.stringify({
+      success: true, stdout: "file contents", stderr: "", exitCode: 0,
+    }) });
+    expect((await vm.execWorkspace("read-file", "/workspace", 30000)).stdout).toBe("file contents");
+    expect(sandbox.bindGithub).not.toHaveBeenCalled();
+    expect(sandbox.exec.mock.calls[0][1].env).toEqual({});
+    expect(snapshots.some(value => value.commandPending)).toBe(true);
+    expect(snapshot.commandPending).toBeUndefined();
+    snapshot = { state: "absent", lastUsedAt: null };
+    await expect(vm.execWorkspace("read-file", "/workspace", 30000)).rejects.toThrow("not created");
+    expect(sandbox.exec).toHaveBeenCalledTimes(1);
+  });
+
   function fixture(initial: VmSnapshot) {
     let snapshot = initial;
     const vm = new CloudflareSandboxVm(

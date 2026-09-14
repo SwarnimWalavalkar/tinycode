@@ -663,7 +663,7 @@ export class DurablePiAgent extends DurableObject<Env> {
           );
           return json(
             await readWorkspace(
-              this.vm,
+              { exec: this.vm.execWorkspace.bind(this.vm) },
               request.method === "PUT" ? "save" : action,
               path,
               request.method === "PUT"

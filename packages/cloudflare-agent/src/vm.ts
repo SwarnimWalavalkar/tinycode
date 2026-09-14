@@ -121,11 +121,11 @@ export class CloudflareSandboxVm implements VmRuntime {
     if (!response.ok) throw new Error("Terminal session could not be ended");
   }
 
-  private async run(command: string, cwd: string, timeout: number, signal?: AbortSignal) {
+  private async run(command: string, cwd: string, timeout: number, signal?: AbortSignal, configureGithub = true) {
     this.assertAvailable();
     if (this.stopActive) throw new Error("Wait for the current VM command to finish");
     if (signal?.aborted) throw new Error("VM command was interrupted");
-    const githubEnv = this.readOwner() === LEGACY_OWNER ? {} : await this.githubEnv();
+    const githubEnv = !configureGithub || this.readOwner() === LEGACY_OWNER ? {} : await this.githubEnv();
     if (signal?.aborted) throw new Error("VM command was interrupted");
     if (this.stopActive) throw new Error("Wait for the current VM command to finish");
     const id = crypto.randomUUID();
@@ -203,6 +203,16 @@ export class CloudflareSandboxVm implements VmRuntime {
     if (this.readSnapshot().state !== "ready")
       throw new Error('Sandbox has not been started. Call vm_manage with action: "start" before using shell, file_read, or file_write.');
     const result = await this.run(command, cwd, timeout, signal);
+    this.used("ready");
+    return result;
+  }
+
+  // Explorer operations only access local files; they do not need GitHub credentials.
+  async execWorkspace(command: string, cwd: string, timeout: number) {
+    this.assertAvailable();
+    if (this.readSnapshot().state !== "ready")
+      throw new Error("The agent has not created a sandbox yet.");
+    const result = await this.run(command, cwd, timeout, undefined, false);
     this.used("ready");
     return result;
   }

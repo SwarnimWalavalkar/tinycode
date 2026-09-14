@@ -149,6 +149,7 @@ export default function Files({
     [],
   );
   useEffect(() => {
+    if (previewOnly) return;
     const abort = new AbortController();
     void source.git(abort.signal).then(
       (v) => {
@@ -160,7 +161,7 @@ export default function Files({
       },
     );
     return () => abort.abort();
-  }, [source, version]);
+  }, [source, version, previewOnly]);
   useEffect(() => {
     if (!dirty) return;
     const beforeUnload = (event: BeforeUnloadEvent) => {
@@ -391,7 +392,7 @@ export default function Files({
       <div
         className={`explorer-body ${viewing ? "has-viewer" : ""} ${showTree ? "" : "tree-hidden"} ${treeOverlay ? "mobile-tree" : ""}`}
       >
-        <div className="explorer-navigation">
+        {!previewOnly && <div className="explorer-navigation">
           <div className="workspace-caption">
             <FolderOpen size={14} />
             <span title={workspaceName}>{workspaceName}</span>
@@ -453,7 +454,7 @@ export default function Files({
               </div>
             )}
           </div>
-        </div>
+        </div>}
         {viewing && (
           <section
             className="file-viewer"

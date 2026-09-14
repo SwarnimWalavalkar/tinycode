@@ -100,7 +100,7 @@ except Exception as e:
   return `python3 -c "import base64; exec(base64.b64decode('${script}'))" '${payload}'`;
 }
 export async function readWorkspace(
-  vm: VmRuntime,
+  vm: Pick<VmRuntime, "exec">,
   action: string,
   path: string,
   input: Record<string, unknown> = {},
