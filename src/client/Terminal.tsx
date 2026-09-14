@@ -3,19 +3,24 @@ import { Terminal as XTerm } from "@xterm/xterm";
 import { FitAddon } from "@xterm/addon-fit";
 import "@xterm/xterm/css/xterm.css";
 import { TerminalSquare, X } from "lucide-react";
-import { onTerminal, sendSocket } from "./state";
+import { connectCloudTerminal } from "./cloud-terminal";
+import { api, onTerminal, sendSocket } from "./state";
 
 export default function Terminal({
   taskId,
   connected,
   onHide,
+  cloud = false,
 }: {
   taskId: string;
   connected: boolean;
   onHide: () => void;
+  cloud?: boolean;
 }) {
   const host = useRef<HTMLDivElement>(null);
+  const remoteTerminal = useRef<ReturnType<typeof connectCloudTerminal> | undefined>(undefined);
   const terminalId = useRef<string | null>(null);
+  const [remoteStatus, setRemoteStatus] = useState<"connecting" | "connected" | "disconnected">("connecting");
   const [exited, setExited] = useState(false);
   const [generation, setGeneration] = useState(0);
   const [fontReady, setFontReady] = useState(false);
@@ -66,7 +71,7 @@ export default function Terminal({
     terminal.loadAddon(fit);
     terminal.open(host.current);
     fit.fit();
-    const off = onTerminal((p) => {
+    const off = cloud ? () => {} : onTerminal((p) => {
       if (p.type === "terminal.ready" && p.taskId === taskId) {
         terminalId.current = p.terminalId;
         terminal.reset();
@@ -78,9 +83,19 @@ export default function Terminal({
         setExited(true);
       }
     });
-    sendSocket({ type: "terminal.create", taskId, cols: terminal.cols, rows: terminal.rows });
+    const remote = cloud ? connectCloudTerminal({
+      taskId,
+      output: data => terminal.write(data),
+      reset: () => terminal.reset(),
+      status: setRemoteStatus,
+      exit: code => { terminal.writeln(`\r\n[Process exited with code ${code}]`); setExited(true); },
+    }) : undefined;
+    remoteTerminal.current = remote;
+    remote?.resize(terminal.cols, terminal.rows);
+    if (!cloud) sendSocket({ type: "terminal.create", taskId, cols: terminal.cols, rows: terminal.rows });
     const input = terminal.onData((data) => {
-      if (terminalId.current)
+      if (remote) remote.write(data);
+      else if (terminalId.current)
         sendSocket({ type: "terminal.input", terminalId: terminalId.current, data });
     });
     let frame = 0;
@@ -88,7 +103,8 @@ export default function Terminal({
       cancelAnimationFrame(frame);
       frame = requestAnimationFrame(() => {
         fit.fit();
-        if (terminalId.current)
+        if (remote) remote.resize(terminal.cols, terminal.rows);
+        else if (terminalId.current)
           sendSocket({
             type: "terminal.resize",
             terminalId: terminalId.current,
@@ -100,27 +116,35 @@ export default function Terminal({
     observer.observe(host.current);
     terminal.focus();
     return () => {
-      sendSocket({ type: "terminal.detach" });
+      if (remote) remote.dispose();
+      else sendSocket({ type: "terminal.detach" });
       observer.disconnect();
       cancelAnimationFrame(frame);
       off();
       input.dispose();
       terminal.dispose();
     };
-  }, [taskId, connected, generation, fontReady]);
+  }, [taskId, connected, generation, fontReady, cloud]);
   return (
     <section className="terminal-pane">
       <header>
         <span>
-          <TerminalSquare size={14} /> Terminal <i>server shell</i>
+          <TerminalSquare size={14} /> Terminal <i>{cloud ? "sandbox shell" : "server shell"}</i>
         </span>
         <div>
-          {exited ? (
-            <button onClick={() => setGeneration((g) => g + 1)}>Restart</button>
+          {cloud && !exited && remoteStatus === "connected" && (
+            <button title="Interrupt foreground command (Ctrl+C)" onClick={() => remoteTerminal.current?.write("\x03")}>Interrupt</button>
+          )}
+          {exited || (cloud && remoteStatus === "disconnected") ? (
+            <button onClick={() => setGeneration((g) => g + 1)}>{exited ? "Restart" : "Reconnect"}</button>
           ) : (
             <button
               onClick={() => {
-                if (terminalId.current)
+                if (cloud) {
+                  void api(`/tasks/${taskId}/terminal`, { method: "DELETE" })
+                    .then(() => { remoteTerminal.current?.dispose(); setExited(true); })
+                    .catch(() => setRemoteStatus("disconnected"));
+                } else if (terminalId.current)
                   sendSocket({ type: "terminal.close", terminalId: terminalId.current });
               }}
             >
@@ -137,7 +161,8 @@ export default function Terminal({
         </div>
       </header>
       <div ref={host} className="terminal-surface" />
-      {!connected && <div className="terminal-disconnected">Reconnecting to terminal…</div>}
+      {(!connected || (cloud && !exited && remoteStatus !== "connected")) &&
+        <div className="terminal-disconnected">{remoteStatus === "disconnected" ? "Terminal disconnected" : "Connecting to terminal…"}</div>}
     </section>
   );
 }

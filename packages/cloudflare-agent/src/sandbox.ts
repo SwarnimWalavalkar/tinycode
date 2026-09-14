@@ -6,6 +6,22 @@ import { ownerId } from "./ownership.js";
 export class Sandbox extends CloudflareSandbox<Env> {
   override interceptHttps = true;
   private boundOwner?: string;
+  async ensureTerminalSession(env: Record<string, string>) {
+    try {
+      await this.createSession({ id: "tinycode-terminal", cwd: "/workspace", env });
+    } catch (error) {
+      // Handle the SDK error here: custom error fields do not survive DO RPC.
+      if (!error || typeof error !== "object" || !("code" in error) || error.code !== "SESSION_ALREADY_EXISTS") throw error;
+    }
+    const session = await this.getSession("tinycode-terminal");
+    const result = await session.exec("python3 /usr/local/lib/tinycode-terminal.py ensure", { env, timeout: 10_000 });
+    if (!result.success) throw new Error("Terminal service failed to start");
+  }
+  override async fetch(request: Request) {
+    if (new URL(request.url).pathname === "/tinycode-terminal")
+      return this.containerFetch(new Request("http://localhost/terminal", request), 3001);
+    return super.fetch(request);
+  }
   /** Ownership only arrives through trusted RPC, never from guest headers. */
   async bindGithub(owner: string) {
     ownerId(owner);

@@ -70,8 +70,8 @@ export function serverFetch(
   });
 }
 
-export function openSocket(settings = connection, token = readToken(settings.url)) {
-  const url = new URL(serverUrl("/socket", settings.url));
+export function openSocket(settings = connection, token = readToken(settings.url), path = "/socket") {
+  const url = new URL(serverUrl(path, settings.url));
   url.protocol = url.protocol === "https:" ? "wss:" : "ws:";
   const encoded = btoa(String.fromCharCode(...new TextEncoder().encode(token)))
     .replaceAll("+", "-")

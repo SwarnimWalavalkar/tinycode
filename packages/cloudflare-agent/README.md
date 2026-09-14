@@ -295,7 +295,13 @@ with Node, Git, Python 3, pip, and venv available in the image. Its stable sandb
 the full Durable Object identity in base36 to fit the Sandbox SDK's 63-character limit.
 It sleeps after ten idle minutes, and can be removed explicitly. Its filesystem is **ephemeral**
 across sleep/replacement/destruction; durable conversation storage does not make workspace files
-durable. Cloud tasks are projectless, with VM tool calls and results in the transcript. The UI supports shell commands, file browsing/editing, and diff inspection; workspace
+durable. Cloud tasks are projectless, with VM tool calls and results in the transcript. The UI uses the same xterm terminal as local tasks, backed by an authenticated
+sandbox WebSocket backed by a Linux PTY and Zsh with command syntax highlighting. It supports interactive programs, resizing, Ctrl-C,
+and reconnect to a stable per-task shell with buffered output. Opening a terminal
+starts an absent sandbox as a user action; hiding it disconnects the browser while
+the shell remains alive until ended or the sandbox sleeps. The terminal shares
+workspace files with the agent. Active WebSockets recheck authentication every
+30 seconds. The UI also supports file browsing/editing and diff inspection; workspace
 checkpoint/restore is not implemented. GitHub-connected users can clone private repositories directly.
 
 The Sandbox receives no real GitHub credentials. GitHub account mode injects them outside the

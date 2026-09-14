@@ -30,7 +30,6 @@ import "./spatial.css";
 const Canvas = lazy(() => import("./Canvas"));
 const Files = lazy(() => import("./Files"));
 const Terminal = lazy(() => import("./Terminal"));
-const CloudShell = lazy(() => import("./CloudShell"));
 const directions = [
   { key: "ArrowLeft", dx: -1, dy: 0, name: "Left", Icon: ArrowLeft },
   { key: "ArrowUp", dx: 0, dy: -1, name: "Up", Icon: ArrowUp },
@@ -491,22 +490,12 @@ export default function SpatialWorkspace({
                     fallback={<div className="panel-loading">Opening…</div>}
                   >
                     {p.kind === "terminal" ? (
-                      task.provider === "cloudflare" ? (
-                        <CloudShell
-                          taskId={task.id}
-                          connected={connected}
-                          registerGuard={(fn) => {
-                            if (fn) guards.current.set(p.id, fn);
-                            else guards.current.delete(p.id);
-                          }}
-                        />
-                      ) : (
-                        <Terminal
-                          taskId={task.id}
-                          connected={connected}
-                          onHide={() => closePanel(p.id)}
-                        />
-                      )
+                      <Terminal
+                        taskId={task.id}
+                        connected={connected}
+                        cloud={task.provider === "cloudflare"}
+                        onHide={() => closePanel(p.id)}
+                      />
                     ) : (
                       <Files
                         taskId={task.id}

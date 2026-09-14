@@ -7,6 +7,8 @@ const sandbox = vi.hoisted(() => ({
   exec: vi.fn(),
   destroy: vi.fn(),
   bindGithub: vi.fn(),
+  ensureTerminalSession: vi.fn(),
+  fetch: vi.fn(),
 }));
 
 vi.mock("@cloudflare/sandbox", () => ({ getSandbox: () => sandbox }));
@@ -196,6 +198,28 @@ describe("Cloudflare Sandbox VM", () => {
     ).resolves.toMatchObject({ success: true, stdout: "done" });
     controller.abort();
     expect(sandbox.exec).toHaveBeenCalledTimes(1);
+  });
+
+  it("starts the terminal explicitly, reuses its session and strips transport credentials", async () => {
+    sandbox.exec.mockResolvedValue(result(0));
+    const terminal = vi.fn(async (_request: Request) => new Response("upgrade"));
+    sandbox.fetch.mockImplementation(terminal);
+    const { vm } = fixture({ state: "absent", lastUsedAt: null });
+    const request = new Request("https://internal/terminal", { headers: {
+      upgrade: "websocket", cookie: "private", authorization: "Bearer secret", "sec-websocket-protocol": "tinycode.auth.secret",
+    } });
+    await vm.terminal(request);
+    expect(sandbox.ensureTerminalSession).toHaveBeenCalledWith({});
+    expect(terminal.mock.calls[0][0].headers.get("upgrade")).toBe("websocket");
+    for (const name of ["cookie", "authorization", "sec-websocket-protocol"])
+      expect(terminal.mock.calls[0][0].headers.get(name)).toBeNull();
+    await vm.terminal(request);
+    expect(sandbox.exec).toHaveBeenCalledTimes(1);
+    expect(terminal).toHaveBeenCalledTimes(2);
+    sandbox.ensureTerminalSession.mockRejectedValue(new Error("infrastructure unavailable"));
+    await expect(vm.terminal(request)).rejects.toThrow("infrastructure unavailable");
+    await vm.closeTerminal();
+    expect(sandbox.fetch.mock.calls.at(-1)?.[0].method).toBe("DELETE");
   });
 
   it("does not recreate a permanently destroyed VM", async () => {

@@ -210,37 +210,7 @@
   flex: 1;
   min-width: 0;
 }
-.cloud-shell {
-  flex: 1;
-  min-height: 0;
-  display: flex;
-  flex-direction: column;
-  padding: 16px;
-  gap: 12px;
-}
-.cloud-shell p {
-  font-size: 11px;
-  color: var(--quiet);
-}
-.cloud-shell pre {
-  flex: 1;
-  min-height: 0;
-  overflow: auto;
-  font: 12px/1.6 var(--mono);
-  white-space: pre-wrap;
-}
-.cloud-shell form {
-  display: flex;
-  gap: 8px;
-}
-.cloud-shell input {
-  flex: 1;
-  min-width: 0;
-  font-family: var(--mono);
-}
-.cloud-shell button {
-  font-size: 12px;
-}
+
 .spatial-column > .conversation-scroll {
   flex: 1;
 }

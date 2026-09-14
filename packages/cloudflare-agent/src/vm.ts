@@ -78,10 +78,7 @@ export class CloudflareSandboxVm implements VmRuntime {
     this.writeSnapshot(snapshot);
   }
 
-  private async run(command: string, cwd: string, timeout: number, signal?: AbortSignal) {
-    this.assertAvailable();
-    if (this.stopActive) throw new Error("Wait for the current VM command to finish");
-    if (signal?.aborted) throw new Error("VM command was interrupted");
+  private async githubEnv(): Promise<Record<string, string>> {
     let githubEnv: Record<string, string> = {};
     const owner = this.readOwner();
     if (owner !== LEGACY_OWNER) {
@@ -99,9 +96,38 @@ export class CloudflareSandboxVm implements VmRuntime {
         GIT_CONFIG_KEY_0: "url.https://github.com/.insteadOf", GIT_CONFIG_VALUE_0: "git@github.com:",
         GIT_CONFIG_KEY_1: "url.https://github.com/.insteadOf", GIT_CONFIG_VALUE_1: "ssh://git@github.com/",
       };
-      if (signal?.aborted) throw new Error("VM command was interrupted");
-      if (this.stopActive) throw new Error("Wait for the current VM command to finish");
     }
+    return githubEnv;
+  }
+
+  async terminal(request: Request) {
+    this.assertAvailable();
+    if (this.readSnapshot().state === "absent") await this.start();
+    const sandbox = this.sandbox();
+    const env = await this.githubEnv();
+    // Stable per-task session: reconnect preserves cwd, exports, history and PTY output.
+    await sandbox.ensureTerminalSession(env);
+    // Transport credentials authorize the Worker only, never the guest.
+    const headers = new Headers({ upgrade: "websocket" });
+    const response = await sandbox.fetch(new Request("http://internal/tinycode-terminal", { headers }));
+    this.used("ready");
+    return response;
+  }
+
+  async closeTerminal() {
+    this.assertAvailable();
+    if (this.readSnapshot().state !== "ready") return;
+    const response = await this.sandbox().fetch(new Request("http://internal/tinycode-terminal", { method: "DELETE" }));
+    if (!response.ok) throw new Error("Terminal session could not be ended");
+  }
+
+  private async run(command: string, cwd: string, timeout: number, signal?: AbortSignal) {
+    this.assertAvailable();
+    if (this.stopActive) throw new Error("Wait for the current VM command to finish");
+    if (signal?.aborted) throw new Error("VM command was interrupted");
+    const githubEnv = this.readOwner() === LEGACY_OWNER ? {} : await this.githubEnv();
+    if (signal?.aborted) throw new Error("VM command was interrupted");
+    if (this.stopActive) throw new Error("Wait for the current VM command to finish");
     const id = crypto.randomUUID();
     const expires = Date.now() + timeout;
     const payload = btoa(unescape(encodeURIComponent(JSON.stringify([command, cwd]))));

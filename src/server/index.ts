@@ -496,13 +496,42 @@ server.on("upgrade", (req, socket, head) => {
     socket.destroy();
     return;
   }
+  const terminalRoute = req.url?.match(/^\/api\/tasks\/([A-Za-z0-9_-]+)\/terminal$/);
   if (
-    req.url !== "/socket" ||
+    (req.url !== "/socket" && !terminalRoute) ||
     !sameOrigin(req, origin, allowedOrigins) ||
     !websocketAuthenticated(req, token) ||
     (!token && !unauthenticatedHostAllowed(req, devOrigin))
   ) {
     socket.end("HTTP/1.1 403 Forbidden\r\nConnection: close\r\n\r\n");
+    return;
+  }
+  if (terminalRoute) {
+    if (!cloud.owns(terminalRoute[1])) {
+      socket.end("HTTP/1.1 404 Not Found\r\nConnection: close\r\n\r\n");
+      return;
+    }
+    const upstream = cloud.terminal(terminalRoute[1]);
+    socket.on("close", () => upstream.close());
+    upstream.on("error", () => socket.destroy());
+    upstream.on("unexpected-response", (_request, response) => {
+      response.resume();
+      socket.end(`HTTP/1.1 ${response.statusCode ?? 502} Terminal unavailable\r\nConnection: close\r\n\r\n`);
+    });
+    upstream.on("open", () => {
+      if (socket.destroyed) { upstream.close(); return; }
+      wss.handleUpgrade(req, socket, head, client => {
+        for (const [source, target] of [[client, upstream], [upstream, client]]) {
+          source.on("message", (data, isBinary) => {
+            if (target.readyState !== WebSocket.OPEN) return;
+            if (target.bufferedAmount > 2 * 1024 * 1024) { source.close(1013); target.close(1013); return; }
+            target.send(data, { binary: isBinary });
+          });
+          source.on("close", () => target.close());
+          source.on("error", () => target.close(1011));
+        }
+      });
+    });
     return;
   }
   wss.handleUpgrade(req, socket, head, (ws) => wss.emit("connection", ws, req));

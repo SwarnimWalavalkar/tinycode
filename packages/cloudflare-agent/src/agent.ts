@@ -607,6 +607,23 @@ export class DurablePiAgent extends DurableObject<Env> {
         return json(this.store.task());
       }
       this.store.task();
+      if (action === "terminal" && request.method === "GET") {
+        if (request.headers.get("upgrade")?.toLowerCase() !== "websocket")
+          throw new HttpError(426, "Expected WebSocket");
+        if (this.running || this.workspaceBusy || this.state.vm.commandPending)
+          throw new HttpError(409, "Wait for the active workspace operation before opening the terminal");
+        this.workspaceBusy = true;
+        try {
+          await this.arm();
+          return await this.vm.terminal(request);
+        } finally {
+          this.workspaceBusy = false;
+        }
+      }
+      if (action === "terminal" && request.method === "DELETE") {
+        await this.vm.closeTerminal();
+        return json({ ok: true });
+      }
       if (
         (request.method === "GET" &&
           ["tree", "file", "git", "diff"].includes(action)) ||

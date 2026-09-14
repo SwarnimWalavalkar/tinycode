@@ -38,6 +38,19 @@ export class CloudAuthority {
       ...init,
     });
   }
+  terminal(taskId: string) {
+    if (!this.owns(taskId)) throw new Error("Cloud task not found");
+    const url = new URL(`${cloudflareAgentUrl()}/api/tasks/${encodeURIComponent(taskId)}/terminal`);
+    url.protocol = "wss:";
+    const socket = new WebSocket(url, ["tinycode"], {
+      headers: { authorization: `Bearer ${process.env.TINYCODE_CLOUDFLARE_AGENT_TOKEN ?? ""}` },
+      handshakeTimeout: 30_000,
+      maxPayload: 1024 * 1024,
+    });
+    this.sockets.add(socket);
+    socket.on("close", () => this.sockets.delete(socket));
+    return socket;
+  }
   async refresh() {
     if (!this.configured()) return;
     const response = await this.fetch("/api/tasks");

@@ -1,3 +1,4 @@
+import { terminalProxy } from "./terminal-proxy.js";
 import { CLOUDFLARE_AGENT_PROTOCOL } from "../../../src/shared/cloudflare-agent.js";
 import {
   allowedOrigin,
@@ -220,6 +221,10 @@ export default {
             );
             target.search = url.search;
             response = await directory.fetch(ownedRequest(target));
+            if (task[2] === "terminal" && response.status === 101)
+              response = terminalProxy(response, async () => github
+                ? !!(await accountStore(env).session(cookie(request, SESSION_COOKIE)))
+                : authorized(request, env.TINYCODE_AGENT_TOKEN!));
           } else if (
             ["/api/bootstrap", "/api/tasks", "/socket"].includes(
               url.pathname,
