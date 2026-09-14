@@ -56,7 +56,7 @@ def application(root=ROOT):
     async def read(request):
         try:
             result = await asyncio.to_thread(read_workspace, request.match_info['action'], request.query.get('path', ''), root)
-            return web.json_response(result)
+            return web.json_response(result, headers={"Cache-Control": "no-store", "X-Content-Type-Options": "nosniff"})
         except (ValueError, OSError) as error:
             return web.json_response({'error': str(error)}, status=400)
 

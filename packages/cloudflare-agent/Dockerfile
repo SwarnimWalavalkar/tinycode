@@ -19,3 +19,7 @@ COPY workspace_server.py /usr/local/lib/workspace_server.py
 COPY workspace_server_test.py /tmp/workspace_server_test.py
 RUN python3 -m unittest discover -s /tmp -p workspace_server_test.py -v \
     && rm -f /tmp/workspace_server_test.py
+
+COPY start-sandbox.sh /usr/local/bin/tinycode-sandbox
+RUN chmod +x /usr/local/bin/tinycode-sandbox && sh -n /usr/local/bin/tinycode-sandbox
+ENTRYPOINT ["/usr/local/bin/tinycode-sandbox"]
